@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/app/login-form";
 import { getSession } from "@/lib/auth";
 
-export default async function Home() {
+export default async function AdminLoginPage() {
   const session = await getSession();
 
   if (session?.role === "admin") {
@@ -17,9 +17,9 @@ export default async function Home() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
       <LoginForm
-        role="user"
-        helpText="Use your username and password from the account created in the database."
-        buttonLabel="Continue as user"
+        role="admin"
+        helpText="Use the admin account configured in .env."
+        buttonLabel="Continue as admin"
       />
     </main>
   );
