@@ -39,7 +39,7 @@ export function LoginForm({
             />
           </div>
           <p className="text-sm font-semibold uppercase tracking-[0.32em] text-sky-600">
-            Finance Task Tracker
+            AR Pulse 360
           </p>
         </div>
 

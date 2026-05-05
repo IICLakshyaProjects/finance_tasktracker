@@ -52,6 +52,7 @@ export default async function AdminPage() {
       responses={responses.map((response) => ({
         id: response.id,
         name: response.name,
+        status: response.status,
         branchId: response.branchId,
         branchName: response.branchName,
         teamLeadName: response.teamLeadName,
