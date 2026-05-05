@@ -10,7 +10,7 @@ const globalForDb = globalThis as typeof globalThis & {
   schemaBootstrapVersion?: number;
 };
 
-const SCHEMA_BOOTSTRAP_VERSION = 10;
+const SCHEMA_BOOTSTRAP_VERSION = 11;
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -65,6 +65,7 @@ async function ensureSchema() {
           "agentId" text NOT NULL,
           "agentName" text NOT NULL,
           "agentUsername" text NOT NULL,
+          status text NOT NULL DEFAULT 'working',
           "branchId" text NOT NULL,
           "branchName" text NOT NULL,
           "teamLeadName" text NOT NULL,
@@ -98,6 +99,7 @@ async function ensureSchema() {
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS name text;
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "campusId" text;
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'USER';
+        ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'working';
       `);
 
       const legacyUserTable = await pool.query<{ exists: boolean }>(
@@ -173,6 +175,7 @@ export type AccountReceivableRecord = {
 export type ResponseRecord = {
   id: string;
   name: string;
+  status: string;
   branchId: string;
   branchName: string;
   teamLeadName: string;
@@ -267,6 +270,7 @@ export async function listResponses(): Promise<ResponseRecord[]> {
       SELECT
         id,
         "agentName" AS name,
+        status,
         "branchId",
         "branchName",
         "teamLeadName",
@@ -857,6 +861,7 @@ export async function createUser(input: {
 
 export async function createResponse(input: {
   name: string;
+  status: string;
   branchId: string;
   branchName: string;
   teamLeadName: string;
@@ -877,6 +882,7 @@ export async function createResponse(input: {
         "agentId",
         "agentName",
         "agentUsername",
+        status,
         "branchId",
         "branchName",
         "teamLeadName",
@@ -889,11 +895,12 @@ export async function createResponse(input: {
         "totalTimeTaken"
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
       )
       RETURNING
         id,
         "agentName" AS name,
+        status,
         "branchId",
         "branchName",
         "teamLeadName",
@@ -911,6 +918,7 @@ export async function createResponse(input: {
       crypto.randomUUID(),
       input.name,
       input.name,
+      input.status,
       input.branchId,
       input.branchName,
       input.teamLeadName,
@@ -927,6 +935,7 @@ export async function createResponse(input: {
   return result.rows[0] ?? {
     id,
     name: input.name,
+    status: input.status,
     branchId: input.branchId,
     branchName: input.branchName,
     teamLeadName: input.teamLeadName,

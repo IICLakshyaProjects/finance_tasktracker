@@ -28,6 +28,16 @@ export type ResponseState = {
   submittedAt: number;
 };
 
+type ResponseStatus = "working" | "leave" | "weekoff";
+type ResponseCategory = "account-receivable" | "branch-related";
+
+type ResponseRowInput = {
+  category: ResponseCategory;
+  categoryValueId: string;
+  totalCount: string;
+  totalTimeTaken: string;
+};
+
 const initialState: LoginState = {
   error: "",
 };
@@ -37,6 +47,52 @@ const initialResponseState: ResponseState = {
   message: "",
   submittedAt: 0,
 };
+
+function normalizeResponseStatus(value: string): ResponseStatus | null {
+  if (value === "working" || value === "leave" || value === "weekoff") {
+    return value;
+  }
+
+  return null;
+}
+
+function parseResponseRows(raw: string): ResponseRowInput[] | null {
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return null;
+    }
+
+    const rows: ResponseRowInput[] = [];
+
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const row = item as Partial<ResponseRowInput>;
+
+      if (row.category !== "account-receivable" && row.category !== "branch-related") {
+        return null;
+      }
+
+      rows.push({
+        category: row.category,
+        categoryValueId: String(row.categoryValueId ?? "").trim(),
+        totalCount: String(row.totalCount ?? "").trim(),
+        totalTimeTaken: String(row.totalTimeTaken ?? "").trim(),
+      });
+    }
+
+    return rows;
+  } catch {
+    return null;
+  }
+}
 
 function normalizeRole(value: FormDataEntryValue | null): Role | null {
   if (value === "admin" || value === "user") {
@@ -102,10 +158,8 @@ export async function createResponseAction(
   const branchId = readString(formData, "branchId");
   const responseDate = readString(formData, "responseDate");
   const teamLeadName = readString(formData, "teamLeadName");
-  const category = readString(formData, "category");
-  const categoryValueId = readString(formData, "categoryValueId");
-  const totalCountRaw = readString(formData, "totalCount");
-  const totalTimeTaken = readString(formData, "totalTimeTaken");
+  const status = normalizeResponseStatus(readString(formData, "status"));
+  const responseRows = parseResponseRows(readString(formData, "responseRows"));
 
   if (!name) {
     return { error: "Enter the name.", message: "", submittedAt: 0 };
@@ -123,21 +177,8 @@ export async function createResponseAction(
     return { error: "Enter the team lead name.", message: "", submittedAt: 0 };
   }
 
-  if (category !== "account-receivable" && category !== "branch-related") {
-    return { error: "Choose a valid category.", message: "", submittedAt: 0 };
-  }
-
-  if (!categoryValueId) {
-    return { error: "Choose a value for the selected category.", message: "", submittedAt: 0 };
-  }
-
-  const totalCount = Number.parseInt(totalCountRaw, 10);
-  if (!Number.isInteger(totalCount) || totalCount < 0) {
-    return { error: "Enter a valid total count.", message: "", submittedAt: 0 };
-  }
-
-  if (!totalTimeTaken) {
-    return { error: "Enter the total time taken.", message: "", submittedAt: 0 };
+  if (!status) {
+    return { error: "Choose a valid status.", message: "", submittedAt: 0 };
   }
 
   const branch = await findCampusById(branchId);
@@ -145,38 +186,87 @@ export async function createResponseAction(
     return { error: "Selected branch was not found.", message: "", submittedAt: 0 };
   }
 
-  const categoryLabel =
-    category === "account-receivable" ? "Account Receivable related" : "Branch related";
+  if (status !== "working") {
+    await createResponse({
+      name,
+      status,
+      branchId: branch.id,
+      branchName: branch.name,
+      teamLeadName,
+      responseDate,
+      category: status,
+      categoryLabel: status === "leave" ? "Leave" : "Weekoff",
+      categoryValueId: "",
+      categoryValueName: "",
+      totalCount: 0,
+      totalTimeTaken: "",
+    });
 
-  const categoryValue =
-    category === "account-receivable"
-      ? await findAccountReceivableById(categoryValueId)
-      : await findBranchRelatedById(categoryValueId);
+    revalidatePath("/admin");
+    refresh();
 
-  if (!categoryValue) {
-    return { error: "Selected category value was not found.", message: "", submittedAt: 0 };
+    return {
+      error: "",
+      message: "Response saved. Returned to the first step.",
+      submittedAt: Date.now(),
+    };
   }
 
-  await createResponse({
-    name,
-    branchId: branch.id,
-    branchName: branch.name,
-    teamLeadName,
-    responseDate,
-    category,
-    categoryLabel,
-    categoryValueId: categoryValue.id,
-    categoryValueName: categoryValue.name,
-    totalCount,
-    totalTimeTaken,
-  });
+  if (!responseRows || !responseRows.length) {
+    return { error: "Add at least one response row.", message: "", submittedAt: 0 };
+  }
+
+  for (let index = 0; index < responseRows.length; index += 1) {
+    const row = responseRows[index];
+    const rowNumber = index + 1;
+
+    if (!row.categoryValueId) {
+      return { error: `Row ${rowNumber}: choose a value for the selected category.`, message: "", submittedAt: 0 };
+    }
+
+    const totalCount = Number.parseInt(row.totalCount, 10);
+    if (!Number.isInteger(totalCount) || totalCount < 0) {
+      return { error: `Row ${rowNumber}: enter a valid total count.`, message: "", submittedAt: 0 };
+    }
+
+    if (!row.totalTimeTaken) {
+      return { error: `Row ${rowNumber}: enter the total time taken.`, message: "", submittedAt: 0 };
+    }
+
+    const categoryLabel =
+      row.category === "account-receivable" ? "Account Receivable related" : "Branch related";
+
+    const categoryValue =
+      row.category === "account-receivable"
+        ? await findAccountReceivableById(row.categoryValueId)
+        : await findBranchRelatedById(row.categoryValueId);
+
+    if (!categoryValue) {
+      return { error: `Row ${rowNumber}: selected category value was not found.`, message: "", submittedAt: 0 };
+    }
+
+    await createResponse({
+      name,
+      status,
+      branchId: branch.id,
+      branchName: branch.name,
+      teamLeadName,
+      responseDate,
+      category: row.category,
+      categoryLabel,
+      categoryValueId: categoryValue.id,
+      categoryValueName: categoryValue.name,
+      totalCount,
+      totalTimeTaken: row.totalTimeTaken,
+    });
+  }
 
   revalidatePath("/admin");
   refresh();
 
   return {
     error: "",
-    message: "Response saved.",
+    message: `${responseRows.length} response${responseRows.length === 1 ? "" : "s"} saved. Returned to the first step.`,
     submittedAt: Date.now(),
   };
 }

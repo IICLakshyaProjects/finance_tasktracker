@@ -45,6 +45,7 @@ type AccountReceivableRecord = {
 type ResponseRecord = {
   id: string;
   name: string;
+  status: string;
   branchId: string;
   branchName: string;
   teamLeadName: string;
@@ -129,6 +130,20 @@ function formatDateTime(value: string | null) {
   }).format(new Date(value));
 }
 
+function responseStatusTone(status: string) {
+  const normalized = status.toLowerCase();
+
+  if (normalized === "working") {
+    return "bg-emerald-500/12 text-emerald-700 ring-1 ring-emerald-400/20";
+  }
+
+  if (normalized === "leave") {
+    return "bg-amber-500/12 text-amber-700 ring-1 ring-amber-400/20";
+  }
+
+  return "bg-sky-500/12 text-sky-700 ring-1 ring-sky-400/20";
+}
+
 function escapeCsv(value: string) {
   if (/[",\n]/.test(value)) {
     return `"${value.replaceAll('"', '""')}"`;
@@ -140,6 +155,7 @@ function escapeCsv(value: string) {
 function downloadResponsesCsv(rows: ResponseRecord[], filename: string) {
   const header = [
     "Name",
+    "Status",
     "Branch",
     "Date",
     "Team Lead",
@@ -153,6 +169,7 @@ function downloadResponsesCsv(rows: ResponseRecord[], filename: string) {
   const lines = rows.map((item) =>
     [
       item.name,
+      item.status,
       item.branchName,
       item.responseDate,
       item.teamLeadName,
@@ -271,6 +288,7 @@ export function AdminDashboard({
   accountReceivables,
   responses,
 }: AdminDashboardProps) {
+  const responsePageSize = 50;
   const [activeTab, setActiveTab] = useState<TabKey>("users");
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [editingEntity, setEditingEntity] = useState<EditingEntity>(null);
@@ -280,6 +298,7 @@ export function AdminDashboard({
   const [responseCategory, setResponseCategory] = useState("");
   const [responseValue, setResponseValue] = useState("");
   const [selectedResponseIds, setSelectedResponseIds] = useState<string[]>([]);
+  const [responsePage, setResponsePage] = useState(1);
 
   const [userCreateState, userCreateAction, userCreatePending] = useActionState(
     createUserAction,
@@ -369,6 +388,13 @@ export function AdminDashboard({
     });
   }, [responseCategory, responseDateFrom, responseDateTo, responseTeamLead, responseValue, responses]);
 
+  const totalResponsePages = Math.max(1, Math.ceil(filteredResponses.length / responsePageSize));
+  const activeResponsePage = Math.min(responsePage, totalResponsePages);
+  const paginatedResponses = useMemo(() => {
+    const start = (activeResponsePage - 1) * responsePageSize;
+    return filteredResponses.slice(start, start + responsePageSize);
+  }, [activeResponsePage, filteredResponses]);
+
   const filteredResponseIds = useMemo(
     () => filteredResponses.map((item) => item.id),
     [filteredResponses],
@@ -382,6 +408,15 @@ export function AdminDashboard({
   const allFilteredSelected =
     filteredResponses.length > 0 &&
     filteredResponses.every((item) => selectedResponseIds.includes(item.id));
+
+  const resetResponseFilters = () => {
+    setResponseDateFrom("");
+    setResponseDateTo("");
+    setResponseTeamLead("");
+    setResponseCategory("");
+    setResponseValue("");
+    setResponsePage(1);
+  };
 
   useEffect(() => {
     const messageChanged =
@@ -949,7 +984,6 @@ export function AdminDashboard({
                       ))}
                       <button
                         type="submit"
-                        onClick={() => setSelectedResponseIds([])}
                         disabled={!selectedResponseIds.length || responseDeletePending}
                         className="rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
@@ -962,7 +996,6 @@ export function AdminDashboard({
                       ))}
                       <button
                         type="submit"
-                        onClick={() => setSelectedResponseIds([])}
                         disabled={!filteredResponseIds.length || responseDeletePending}
                         className="rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
@@ -971,13 +1004,7 @@ export function AdminDashboard({
                     </form>
                     <button
                       type="button"
-                      onClick={() => {
-                        setResponseDateFrom("");
-                        setResponseDateTo("");
-                        setResponseTeamLead("");
-                        setResponseCategory("");
-                        setResponseValue("");
-                      }}
+                      onClick={resetResponseFilters}
                       className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
                     >
                       Clear filters
@@ -993,7 +1020,10 @@ export function AdminDashboard({
                     <input
                       type="date"
                       value={responseDateFrom}
-                      onChange={(event) => setResponseDateFrom(event.target.value)}
+                      onChange={(event) => {
+                        setResponseDateFrom(event.target.value);
+                        setResponsePage(1);
+                      }}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                     />
                   </div>
@@ -1004,7 +1034,10 @@ export function AdminDashboard({
                     <input
                       type="date"
                       value={responseDateTo}
-                      onChange={(event) => setResponseDateTo(event.target.value)}
+                      onChange={(event) => {
+                        setResponseDateTo(event.target.value);
+                        setResponsePage(1);
+                      }}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                     />
                   </div>
@@ -1015,7 +1048,10 @@ export function AdminDashboard({
                     <input
                       type="text"
                       value={responseTeamLead}
-                      onChange={(event) => setResponseTeamLead(event.target.value)}
+                      onChange={(event) => {
+                        setResponseTeamLead(event.target.value);
+                        setResponsePage(1);
+                      }}
                       placeholder="Search team lead"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                     />
@@ -1030,6 +1066,7 @@ export function AdminDashboard({
                         const nextCategory = event.target.value;
                         setResponseCategory(nextCategory);
                         setResponseValue("");
+                        setResponsePage(1);
                       }}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                     >
@@ -1047,7 +1084,10 @@ export function AdminDashboard({
                     </label>
                     <select
                       value={responseValue}
-                      onChange={(event) => setResponseValue(event.target.value)}
+                      onChange={(event) => {
+                        setResponseValue(event.target.value);
+                        setResponsePage(1);
+                      }}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                     >
                       <option value="">All values</option>
@@ -1085,6 +1125,7 @@ export function AdminDashboard({
                           />
                         </th>
                         <th className="px-4 py-3">Name</th>
+                        <th className="px-4 py-3">Status</th>
                         <th className="px-4 py-3">Branch</th>
                         <th className="px-4 py-3">Date</th>
                         <th className="px-4 py-3">Team Lead</th>
@@ -1096,8 +1137,8 @@ export function AdminDashboard({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {filteredResponses.length ? (
-                        filteredResponses.map((item) => (
+                      {paginatedResponses.length ? (
+                        paginatedResponses.map((item) => (
                           <tr key={item.id} className="align-top">
                             <td className="px-4 py-4">
                               <input
@@ -1117,6 +1158,11 @@ export function AdminDashboard({
                             <td className="px-4 py-4">
                               <p className="font-medium text-slate-950">{item.name}</p>
                             </td>
+                            <td className="px-4 py-4">
+                              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${responseStatusTone(item.status)}`}>
+                                {item.status}
+                              </span>
+                            </td>
                             <td className="px-4 py-4 text-sm text-slate-700">{item.branchName}</td>
                             <td className="px-4 py-4 text-sm text-slate-700">{item.responseDate}</td>
                             <td className="px-4 py-4 text-sm text-slate-700">{item.teamLeadName}</td>
@@ -1127,15 +1173,38 @@ export function AdminDashboard({
                             <td className="px-4 py-4 text-sm text-slate-700">{formatDateTime(item.createdAt)}</td>
                           </tr>
                         ))
-                      ) : (
+                        ) : (
                         <tr>
-                          <td className="px-4 py-8 text-sm text-slate-500" colSpan={10}>
+                          <td className="px-4 py-8 text-sm text-slate-500" colSpan={11}>
                             No responses match the current filters.
                           </td>
                         </tr>
                       )}
                     </tbody>
                   </table>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-slate-600">
+                  Page {activeResponsePage} of {totalResponsePages}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setResponsePage((current) => Math.max(1, current - 1))}
+                    disabled={activeResponsePage <= 1}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResponsePage((current) => Math.min(totalResponsePages, current + 1))}
+                    disabled={activeResponsePage >= totalResponsePages}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
                 </div>
               </div>
               <InlineStatus state={responseDeleteState} />
