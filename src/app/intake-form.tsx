@@ -30,6 +30,7 @@ type ResponseRow = {
   categoryValueId: string;
   totalCount: string;
   totalTimeTaken: string;
+  remark: string;
 };
 
 const initialState: ResponseState = {
@@ -58,6 +59,7 @@ function createRow(): ResponseRow {
     categoryValueId: "",
     totalCount: "",
     totalTimeTaken: "",
+    remark: "",
   };
 }
 
@@ -161,7 +163,7 @@ export function IntakeForm({
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-6xl items-center justify-center">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-7xl items-center justify-center">
         <section className="w-full overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
           <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-5 sm:px-8">
             <div className="flex flex-1 items-center justify-center gap-3">
@@ -202,7 +204,7 @@ export function IntakeForm({
                   {responseStatus === "working"
                     ? step === 1
                       ? "Name and branch are fetched from your login account. Select the date, team lead, and working status first."
-                      : "Add one or more response rows using the plus button. Each row stays on a single line."
+                      : "Add one or more response rows using the plus button. Remark supports multiple paragraphs."
                     : "Select leave or weekoff to save immediately, or choose working to continue to the response rows."}
                 </p>
               </div>
@@ -223,6 +225,7 @@ export function IntakeForm({
                         categoryValueId: row.categoryValueId,
                         totalCount: row.totalCount,
                         totalTimeTaken: row.totalTimeTaken,
+                        remark: row.remark,
                       };
                     }),
                   )}
@@ -304,7 +307,7 @@ export function IntakeForm({
                   </div>
 
                   <div className="grid gap-5 lg:grid-cols-2">
-                    <div>
+                    <div className="lg:col-span-2">
                       <label
                         htmlFor="responseStatus"
                         className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600"
@@ -341,7 +344,7 @@ export function IntakeForm({
                     return (
                       <div
                         key={row.id}
-                        className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1.25fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto_auto]"
+                        className="grid gap-4 lg:items-start lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,0.75fr)_minmax(0,0.95fr)_minmax(0,1.5fr)_auto_auto]"
                       >
                         <div>
                           <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600">
@@ -421,6 +424,19 @@ export function IntakeForm({
                           />
                         </div>
 
+                        <div>
+                          <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600">
+                            Remark
+                          </label>
+                          <textarea
+                            value={row.remark}
+                            onChange={(event) => updateRow(row.id, { remark: event.target.value })}
+                            placeholder="Add one or more paragraphs of notes"
+                            rows={4}
+                            className="min-h-[132px] w-full resize-y rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                          />
+                        </div>
+
                         <div className="flex items-end gap-2">
                           <button
                             type="button"
@@ -442,7 +458,7 @@ export function IntakeForm({
                         </div>
 
                         {index === 0 ? (
-                          <div className="lg:col-span-6 flex items-start text-xs text-slate-500">
+                          <div className="lg:col-span-7 flex items-start text-xs text-slate-500">
                             Add more rows with the plus button on the right.
                           </div>
                         ) : null}

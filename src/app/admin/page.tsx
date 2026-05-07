@@ -63,6 +63,7 @@ export default async function AdminPage() {
         categoryValueName: response.categoryValueName,
         totalCount: response.totalCount,
         totalTimeTaken: response.totalTimeTaken,
+        remark: response.remark,
         createdAt: response.createdAt.toISOString(),
       }))}
     />

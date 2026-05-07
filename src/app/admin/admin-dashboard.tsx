@@ -56,6 +56,7 @@ type ResponseRecord = {
   categoryValueName: string;
   totalCount: number;
   totalTimeTaken: string;
+  remark: string;
   createdAt: string;
 };
 
@@ -163,6 +164,7 @@ function downloadResponsesCsv(rows: ResponseRecord[], filename: string) {
     "Value",
     "Count",
     "Time",
+    "Remark",
     "Created",
   ];
 
@@ -177,6 +179,7 @@ function downloadResponsesCsv(rows: ResponseRecord[], filename: string) {
       item.categoryValueName,
       String(item.totalCount),
       item.totalTimeTaken,
+      item.remark,
       formatDateTime(String(item.createdAt)),
     ]
       .map((value) => escapeCsv(value))
@@ -1133,6 +1136,7 @@ export function AdminDashboard({
                         <th className="px-4 py-3">Value</th>
                         <th className="px-4 py-3">Count</th>
                         <th className="px-4 py-3">Time</th>
+                        <th className="px-4 py-3">Remark</th>
                         <th className="px-4 py-3">Created</th>
                       </tr>
                     </thead>
@@ -1170,12 +1174,15 @@ export function AdminDashboard({
                             <td className="px-4 py-4 text-sm text-slate-700">{item.categoryValueName}</td>
                             <td className="px-4 py-4 text-sm font-medium text-slate-700">{item.totalCount}</td>
                             <td className="px-4 py-4 text-sm text-slate-700">{item.totalTimeTaken}</td>
+                            <td className="px-4 py-4 text-sm leading-6 text-slate-700 whitespace-pre-wrap break-words">
+                              {item.remark || "—"}
+                            </td>
                             <td className="px-4 py-4 text-sm text-slate-700">{formatDateTime(item.createdAt)}</td>
                           </tr>
                         ))
                         ) : (
                         <tr>
-                          <td className="px-4 py-8 text-sm text-slate-500" colSpan={11}>
+                          <td className="px-4 py-8 text-sm text-slate-500" colSpan={12}>
                             No responses match the current filters.
                           </td>
                         </tr>
