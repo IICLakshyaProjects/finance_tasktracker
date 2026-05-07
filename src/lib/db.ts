@@ -10,7 +10,7 @@ const globalForDb = globalThis as typeof globalThis & {
   schemaBootstrapVersion?: number;
 };
 
-const SCHEMA_BOOTSTRAP_VERSION = 11;
+const SCHEMA_BOOTSTRAP_VERSION = 12;
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -76,6 +76,7 @@ async function ensureSchema() {
           "responseDate" text NOT NULL,
           "totalCount" integer NOT NULL,
           "totalTimeTaken" text NOT NULL,
+          remark text NOT NULL DEFAULT '',
           "createdAt" timestamptz NOT NULL DEFAULT now(),
           "updatedAt" timestamptz NOT NULL DEFAULT now()
         );
@@ -100,6 +101,7 @@ async function ensureSchema() {
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "campusId" text;
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'USER';
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'working';
+        ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS remark text NOT NULL DEFAULT '';
       `);
 
       const legacyUserTable = await pool.query<{ exists: boolean }>(
@@ -186,6 +188,7 @@ export type ResponseRecord = {
   categoryValueName: string;
   totalCount: number;
   totalTimeTaken: string;
+  remark: string;
   createdAt: Date;
 };
 
@@ -281,6 +284,7 @@ export async function listResponses(): Promise<ResponseRecord[]> {
         "categoryValueName",
         "totalCount",
         "totalTimeTaken",
+        remark,
         "createdAt"
       FROM "Responses"
       ORDER BY "responseDate" DESC, "createdAt" DESC
@@ -872,6 +876,7 @@ export async function createResponse(input: {
   categoryValueName: string;
   totalCount: number;
   totalTimeTaken: string;
+  remark: string;
 }) {
   const id = crypto.randomUUID();
 
@@ -892,10 +897,11 @@ export async function createResponse(input: {
         "categoryValueId",
         "categoryValueName",
         "totalCount",
-        "totalTimeTaken"
+        "totalTimeTaken",
+        remark
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
       )
       RETURNING
         id,
@@ -911,6 +917,7 @@ export async function createResponse(input: {
         "categoryValueName",
         "totalCount",
         "totalTimeTaken",
+        remark,
         "createdAt"
     `,
     [
@@ -929,6 +936,7 @@ export async function createResponse(input: {
       input.categoryValueName,
       input.totalCount,
       input.totalTimeTaken,
+      input.remark,
     ],
   );
 
@@ -946,6 +954,7 @@ export async function createResponse(input: {
     categoryValueName: input.categoryValueName,
     totalCount: input.totalCount,
     totalTimeTaken: input.totalTimeTaken,
+    remark: input.remark,
     createdAt: new Date(),
   };
 }

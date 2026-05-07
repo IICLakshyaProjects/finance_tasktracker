@@ -36,6 +36,7 @@ type ResponseRowInput = {
   categoryValueId: string;
   totalCount: string;
   totalTimeTaken: string;
+  remark: string;
 };
 
 const initialState: LoginState = {
@@ -85,6 +86,7 @@ function parseResponseRows(raw: string): ResponseRowInput[] | null {
         categoryValueId: String(row.categoryValueId ?? "").trim(),
         totalCount: String(row.totalCount ?? "").trim(),
         totalTimeTaken: String(row.totalTimeTaken ?? "").trim(),
+        remark: String(row.remark ?? "").trim(),
       });
     }
 
@@ -200,6 +202,7 @@ export async function createResponseAction(
       categoryValueName: "",
       totalCount: 0,
       totalTimeTaken: "",
+      remark: "",
     });
 
     revalidatePath("/admin");
@@ -258,6 +261,7 @@ export async function createResponseAction(
       categoryValueName: categoryValue.name,
       totalCount,
       totalTimeTaken: row.totalTimeTaken,
+      remark: row.remark,
     });
   }
 
