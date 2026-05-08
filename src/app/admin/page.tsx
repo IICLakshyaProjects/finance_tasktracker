@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { getSession } from "@/lib/auth";
 import {
+  getActivityDateSettings,
   listAccountReceivables,
   listBranchRelated,
   listCampuses,
@@ -30,6 +31,7 @@ export default async function AdminPage() {
     listAccountReceivables(),
     listResponses(),
   ]);
+  const activityDateSettings = await getActivityDateSettings();
 
   return (
     <AdminDashboard
@@ -67,6 +69,7 @@ export default async function AdminPage() {
         remark: response.remark,
         createdAt: response.createdAt.toISOString(),
       }))}
+      activityDateSettings={activityDateSettings}
     />
   );
 }

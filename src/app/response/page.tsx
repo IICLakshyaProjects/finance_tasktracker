@@ -1,7 +1,13 @@
 import { redirect } from "next/navigation";
 
 import { getSession } from "@/lib/auth";
-import { getUserByEmail, listAccountReceivables, listBranchRelated, listTeamLeads } from "@/lib/db";
+import {
+  getActivityDateSettings,
+  getUserByEmail,
+  listAccountReceivables,
+  listBranchRelated,
+  listTeamLeads,
+} from "@/lib/db";
 import { IntakeForm } from "../intake-form";
 
 export default async function ResponsePage() {
@@ -26,6 +32,7 @@ export default async function ResponsePage() {
     listAccountReceivables(),
     listBranchRelated(),
   ]);
+  const activityDateSettings = await getActivityDateSettings();
 
   return (
     <IntakeForm
@@ -44,6 +51,7 @@ export default async function ResponsePage() {
         id: item.id,
         label: item.name,
       }))}
+      activityDateSettings={activityDateSettings}
     />
   );
 }

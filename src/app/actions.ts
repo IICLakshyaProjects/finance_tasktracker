@@ -16,7 +16,9 @@ import {
   findAccountReceivableById,
   findBranchRelatedById,
   findCampusById,
+  getActivityDateSettings,
 } from "@/lib/db";
+import { getAllowedActivityDateBounds } from "@/lib/activity-date";
 
 export type LoginState = {
   error: string;
@@ -163,22 +165,6 @@ function normalizeDuration(hours: number, minutes: number) {
   };
 }
 
-function getActivityDateString(offsetDays = 0) {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-  }).format(date);
-}
-
-function getActivityDateBounds() {
-  return {
-    previous: getActivityDateString(-1),
-    current: getActivityDateString(0),
-  };
-}
-
 export async function createResponseAction(
   previousState: ResponseState = initialResponseState,
   formData: FormData,
@@ -204,9 +190,15 @@ export async function createResponseAction(
     return { error: "Choose the activity date.", message: "", submittedAt: 0 };
   }
 
-  const { previous, current } = getActivityDateBounds();
-  if (responseDate !== previous && responseDate !== current) {
-    return { error: "Choose today's or yesterday's activity date.", message: "", submittedAt: 0 };
+  const activityDateSettings = await getActivityDateSettings();
+  const { allowedDates } = getAllowedActivityDateBounds(activityDateSettings);
+
+  if (allowedDates.length && !allowedDates.includes(responseDate)) {
+    return {
+      error: "Choose today's or yesterday's activity date.",
+      message: "",
+      submittedAt: 0,
+    };
   }
 
   if (!teamLeadName) {

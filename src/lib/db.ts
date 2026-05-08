@@ -3,6 +3,7 @@ import "server-only";
 import crypto from "crypto";
 
 import { Pool, type QueryResultRow } from "pg";
+import { type ActivityDateSettings } from "@/lib/activity-date";
 
 const globalForDb = globalThis as typeof globalThis & {
   pool?: Pool;
@@ -10,7 +11,7 @@ const globalForDb = globalThis as typeof globalThis & {
   schemaBootstrapVersion?: number;
 };
 
-const SCHEMA_BOOTSTRAP_VERSION = 13;
+const SCHEMA_BOOTSTRAP_VERSION = 15;
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -83,6 +84,12 @@ async function ensureSchema() {
           "updatedAt" timestamptz NOT NULL DEFAULT now()
         );
 
+        CREATE TABLE IF NOT EXISTS "AppSettings" (
+          key text PRIMARY KEY,
+          value text NOT NULL,
+          "updatedAt" timestamptz NOT NULL DEFAULT now()
+        );
+
         CREATE TABLE IF NOT EXISTS "users" (
           id text PRIMARY KEY,
           name text,
@@ -107,6 +114,10 @@ async function ensureSchema() {
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS "totalTimeTaken" text NOT NULL DEFAULT '0:00';
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS "totalTimeTakenHours" integer NOT NULL DEFAULT 0;
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS "totalTimeTakenMinutes" integer NOT NULL DEFAULT 0;
+
+        INSERT INTO "AppSettings" (key, value)
+        VALUES ('restrictActivityDate', 'true')
+        ON CONFLICT (key) DO NOTHING;
       `);
 
       const legacyTimeColumn = await pool.query<{ exists: boolean }>(
@@ -183,6 +194,63 @@ async function ensureSchema() {
 async function query<T extends QueryResultRow>(text: string, values: unknown[] = []) {
   await ensureSchema();
   return pool.query<T>(text, values);
+}
+
+function parseBooleanSetting(value: string | null | undefined, fallback: boolean) {
+  if (value == null) {
+    return fallback;
+  }
+
+  return value === "true";
+}
+
+export async function getActivityDateSettings(): Promise<ActivityDateSettings> {
+  const result = await query<{ key: string; value: string }>(
+    `
+      SELECT key, value
+      FROM "AppSettings"
+      WHERE key = 'restrictActivityDate'
+    `,
+  );
+
+  const values = new Map(result.rows.map((row) => [row.key, row.value]));
+
+  const legacyResult = await query<{ key: string; value: string }>(
+    `
+      SELECT key, value
+      FROM "AppSettings"
+      WHERE key IN ('allowCurrentActivityDate', 'allowPreviousActivityDate')
+    `,
+  );
+
+  const legacyValues = new Map(legacyResult.rows.map((row) => [row.key, row.value]));
+  const legacyCurrent = legacyValues.get("allowCurrentActivityDate");
+  const legacyPrevious = legacyValues.get("allowPreviousActivityDate");
+  const legacyRestricted =
+    legacyCurrent == null && legacyPrevious == null
+      ? null
+      : legacyCurrent === "true" && legacyPrevious === "true";
+
+  const restrictActivityDate =
+    parseBooleanSetting(values.get("restrictActivityDate"), legacyRestricted ?? true);
+
+  return {
+    restrictActivityDate,
+  };
+}
+
+export async function updateActivityDateSettings(settings: ActivityDateSettings): Promise<void> {
+  await query(
+    `
+      INSERT INTO "AppSettings" (key, value)
+      VALUES ('restrictActivityDate', $1)
+      ON CONFLICT (key) DO UPDATE
+      SET
+        value = EXCLUDED.value,
+        "updatedAt" = NOW()
+    `,
+    [String(settings.restrictActivityDate)],
+  );
 }
 
 function formatDuration(hours: number, minutes: number) {
