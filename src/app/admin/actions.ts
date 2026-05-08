@@ -8,6 +8,7 @@ import {
   createCampus,
   createTeamLead,
   createUser,
+  updateActivityDateSettings,
   deleteAccountReceivable,
   deleteBranchRelated,
   deleteCampus,
@@ -501,6 +502,22 @@ export async function deleteUserAction(
   revalidatePath("/admin");
   refresh();
   return deleted ? success("User deleted.") : failure("Could not delete user.");
+}
+
+export async function updateActivityDateSettingsAction(
+  previousState: AdminActionState = initialState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  void previousState;
+
+  const restrictActivityDate = formData.get("restrictActivityDate") === "on";
+
+  await updateActivityDateSettings({ restrictActivityDate });
+  revalidatePath("/admin");
+  revalidatePath("/response");
+  refresh();
+
+  return success("Activity date settings updated.");
 }
 
 export async function deleteResponsesAction(

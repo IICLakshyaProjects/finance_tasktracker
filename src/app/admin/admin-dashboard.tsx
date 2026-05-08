@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { logoutAction } from "../actions";
+import { getActivityDateString, getAllowedActivityDateBounds, type ActivityDateSettings } from "@/lib/activity-date";
 import {
   addAccountReceivablesAction,
   addBranchRelatedAction,
@@ -15,6 +16,7 @@ import {
   deleteTeamLeadAction,
   deleteResponsesAction,
   deleteUserAction,
+  updateActivityDateSettingsAction,
   updateAccountReceivablesAction,
   updateBranchRelatedAction,
   updateCampusAction,
@@ -61,6 +63,10 @@ type ResponseRecord = {
   createdAt: string;
 };
 
+type DailyResponseRow = ResponseRecord & {
+  isPlaceholder: boolean;
+};
+
 type UserRecord = {
   id: string;
   name: string | null;
@@ -90,6 +96,7 @@ type AdminDashboardProps = {
   teamLeads: TeamLeadRecord[];
   accountReceivables: AccountReceivableRecord[];
   responses: ResponseRecord[];
+  activityDateSettings: ActivityDateSettings;
 };
 
 type TabKey = "users" | "campus" | "team-leads" | "account-receivables" | "branch-related" | "response";
@@ -153,7 +160,19 @@ function responseStatusTone(status: string) {
     return "bg-amber-500/12 text-amber-700 ring-1 ring-amber-400/20";
   }
 
+  if (normalized === "pending") {
+    return "bg-slate-500/12 text-slate-700 ring-1 ring-slate-400/20";
+  }
+
   return "bg-sky-500/12 text-sky-700 ring-1 ring-sky-400/20";
+}
+
+function formatDailyTime(hours: number, minutes: number) {
+  return `${hours}:${String(minutes).padStart(2, "0")}`;
+}
+
+function normalizeKey(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function escapeCsv(value: string) {
@@ -301,8 +320,13 @@ export function AdminDashboard({
   teamLeads,
   accountReceivables,
   responses,
+  activityDateSettings,
 }: AdminDashboardProps) {
   const responsePageSize = 50;
+  const todayActivityDate = getActivityDateString(0);
+  const { min: activityDateMin, max: activityDateMax } = getAllowedActivityDateBounds(
+    activityDateSettings,
+  );
   const [activeTab, setActiveTab] = useState<TabKey>("users");
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [editingEntity, setEditingEntity] = useState<EditingEntity>(null);
@@ -311,6 +335,7 @@ export function AdminDashboard({
   const [responseTeamLead, setResponseTeamLead] = useState("");
   const [responseCategory, setResponseCategory] = useState("");
   const [responseValue, setResponseValue] = useState("");
+  const [dailyResponseDate, setDailyResponseDate] = useState(todayActivityDate);
   const [selectedResponseIds, setSelectedResponseIds] = useState<string[]>([]);
   const [responsePage, setResponsePage] = useState(1);
 
@@ -351,6 +376,10 @@ export function AdminDashboard({
     updateAccountReceivablesAction,
     emptyState,
   );
+  const [activityDateState, activityDateAction, activityDatePending] = useActionState(
+    updateActivityDateSettingsAction,
+    emptyState,
+  );
   const [responseDeleteState, responseDeleteAction, responseDeletePending] = useActionState(
     deleteResponsesAction,
     emptyState,
@@ -366,6 +395,7 @@ export function AdminDashboard({
   const teamLeadEditMessageRef = useRef(teamLeadEditState.message);
   const accountMessageRef = useRef(accountCreateState.message);
   const accountEditMessageRef = useRef(accountEditState.message);
+  const activityDateMessageRef = useRef(activityDateState.message);
 
   const responseCategoryOptions = useMemo(() => {
     return Array.from(new Set(responses.map((item) => item.categoryLabel))).sort();
@@ -401,6 +431,70 @@ export function AdminDashboard({
       return true;
     });
   }, [responseCategory, responseDateFrom, responseDateTo, responseTeamLead, responseValue, responses]);
+
+  const activeUsers = useMemo(() => {
+    return users
+      .filter((user) => user.role !== "ADMIN")
+      .slice()
+      .sort((a, b) => (a.name ?? a.username).localeCompare(b.name ?? b.username));
+  }, [users]);
+
+  const dailyResponseRows = useMemo(() => {
+    if (!dailyResponseDate) {
+      return [];
+    }
+
+    const responsesForDate = responses.filter((item) => item.responseDate === dailyResponseDate);
+    const groupedByName = new Map<string, ResponseRecord[]>();
+
+    for (const response of responsesForDate) {
+      const key = normalizeKey(response.name);
+      const current = groupedByName.get(key) ?? [];
+      current.push(response);
+      groupedByName.set(key, current);
+    }
+
+    const rows: DailyResponseRow[] = [];
+
+    for (const user of activeUsers) {
+      const displayName = user.name?.trim() || user.username;
+      const key = normalizeKey(displayName);
+      const matches = groupedByName.get(key) ?? [];
+
+      if (!matches.length) {
+        rows.push({
+          id: `placeholder-${user.id}-${dailyResponseDate}`,
+          name: displayName,
+          status: "pending",
+          branchId: user.campusId ?? "",
+          branchName: user.campusName ?? "—",
+          teamLeadName: "—",
+          responseDate: dailyResponseDate,
+          category: "—",
+          categoryLabel: "—",
+          categoryValueId: "",
+          categoryValueName: "—",
+          totalCount: 0,
+          totalTimeTaken: "0:00",
+          totalTimeTakenHours: 0,
+          totalTimeTakenMinutes: 0,
+          remark: "",
+          createdAt: "",
+          isPlaceholder: true,
+        });
+        continue;
+      }
+
+      for (const response of matches) {
+        rows.push({
+          ...response,
+          isPlaceholder: false,
+        });
+      }
+    }
+
+    return rows;
+  }, [activeUsers, dailyResponseDate, responses]);
 
   const totalResponsePages = Math.max(1, Math.ceil(filteredResponses.length / responsePageSize));
   const activeResponsePage = Math.min(responsePage, totalResponsePages);
@@ -532,6 +626,10 @@ export function AdminDashboard({
 
     accountEditMessageRef.current = accountEditState.message;
   }, [accountEditState.error, accountEditState.message]);
+
+  useEffect(() => {
+    activityDateMessageRef.current = activityDateState.message;
+  }, [activityDateState.message]);
 
   const activeEditState =
     editingEntity?.kind === "user"
@@ -967,6 +1065,119 @@ export function AdminDashboard({
 
           {activeTab === "response" ? (
             <SectionCard title="Response" subtitle="Latest admin responses and saved status.">
+              <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_40px_rgba(15,23,42,0.04)]">
+                <div className="mb-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                    Activity date setting
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Enable this to allow only today and yesterday. Disable it to allow any date.
+                  </p>
+                </div>
+                <form action={activityDateAction} className="grid gap-4">
+                  <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      name="restrictActivityDate"
+                      defaultChecked={activityDateSettings.restrictActivityDate}
+                      className="h-4 w-4 rounded border-slate-300 text-sky-500 focus:ring-sky-400"
+                    />
+                    Enable date restriction
+                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm text-slate-500">
+                      When enabled, only today and yesterday can be selected.
+                    </p>
+                    <button
+                      type="submit"
+                      disabled={activityDatePending}
+                      className="rounded-full bg-sky-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {activityDatePending ? "Saving..." : "Save settings"}
+                    </button>
+                  </div>
+                </form>
+                <InlineStatus state={activityDateState} />
+              </div>
+              <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_40px_rgba(15,23,42,0.04)]">
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                      Daily roster
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Shows every registered user for the selected date. Empty users stay at 0 until a response is saved.
+                    </p>
+                  </div>
+                  <div className="w-full sm:w-56">
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={dailyResponseDate}
+                      onChange={(event) => setDailyResponseDate(event.target.value)}
+                      min={activityDateMin || undefined}
+                      max={activityDateMax || undefined}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                    />
+                  </div>
+                </div>
+                <div className="overflow-hidden rounded-2xl border border-slate-200">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200">
+                      <thead className="bg-slate-50">
+                        <tr className="text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                          <th className="px-4 py-3">Name</th>
+                          <th className="px-4 py-3">Status</th>
+                          <th className="px-4 py-3">Branch</th>
+                          <th className="px-4 py-3">Date</th>
+                          <th className="px-4 py-3">Team Lead</th>
+                          <th className="px-4 py-3">Category</th>
+                          <th className="px-4 py-3">Value</th>
+                          <th className="px-4 py-3">Count</th>
+                          <th className="px-4 py-3">Total Time Taken</th>
+                          <th className="px-4 py-3">Remark</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {dailyResponseRows.length ? (
+                          dailyResponseRows.map((item) => (
+                            <tr key={item.id} className={`align-top ${item.isPlaceholder ? "bg-slate-50/60" : ""}`}>
+                              <td className="px-4 py-4">
+                                <p className="font-medium text-slate-950">{item.name || "—"}</p>
+                              </td>
+                              <td className="px-4 py-4">
+                                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${responseStatusTone(item.status)}`}>
+                                  {item.isPlaceholder ? "Pending" : item.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-4 text-sm text-slate-700">{item.branchName || "—"}</td>
+                              <td className="px-4 py-4 text-sm text-slate-700">{item.responseDate || "—"}</td>
+                              <td className="px-4 py-4 text-sm text-slate-700">{item.teamLeadName || "—"}</td>
+                              <td className="px-4 py-4 text-sm text-slate-700">{item.categoryLabel || "—"}</td>
+                              <td className="px-4 py-4 text-sm text-slate-700">{item.categoryValueName || "—"}</td>
+                              <td className="px-4 py-4 text-sm font-medium text-slate-700">{item.totalCount}</td>
+                              <td className="px-4 py-4 text-sm text-slate-700">
+                                {formatDailyTime(item.totalTimeTakenHours, item.totalTimeTakenMinutes)}
+                              </td>
+                              <td className="px-4 py-4 text-sm leading-6 text-slate-700 whitespace-pre-wrap break-words">
+                                {item.remark || "—"}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td className="px-4 py-8 text-sm text-slate-500" colSpan={10}>
+                              No users available for the selected date.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_12px_40px_rgba(15,23,42,0.04)]">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div>

@@ -5,6 +5,11 @@ import { useActionState, useEffect, useRef, useState } from "react";
 
 import { logoutAction } from "./actions";
 import { createResponseAction, type ResponseState } from "./actions";
+import {
+  getActivityDateString,
+  getAllowedActivityDateBounds,
+  type ActivityDateSettings,
+} from "@/lib/activity-date";
 
 type SelectOption = {
   id: string;
@@ -18,6 +23,7 @@ type IntakeFormProps = {
   teamLeads: SelectOption[];
   accountReceivables: SelectOption[];
   branchRelated: SelectOption[];
+  activityDateSettings: ActivityDateSettings;
 };
 
 type CategoryKey = "account-receivable" | "branch-related";
@@ -81,15 +87,6 @@ function getOptionsForCategory(
   return [];
 }
 
-function getActivityDateString(offsetDays = 0) {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-  }).format(date);
-}
-
 export function IntakeForm({
   initialName,
   initialBranchId,
@@ -97,14 +94,17 @@ export function IntakeForm({
   teamLeads,
   accountReceivables,
   branchRelated,
+  activityDateSettings,
 }: IntakeFormProps) {
   const [state, formAction, pending] = useActionState(createResponseAction, initialState);
-  const activityDate = getActivityDateString(0);
-  const previousActivityDate = getActivityDateString(-1);
+  const todayActivityDate = getActivityDateString(0);
+  const { min: activityDateMin, max: activityDateMax } = getAllowedActivityDateBounds(
+    activityDateSettings,
+  );
   const [step, setStep] = useState<Step>(1);
   const [name] = useState(initialName);
   const [branchId] = useState(initialBranchId);
-  const [responseDate, setResponseDate] = useState(activityDate);
+  const [responseDate, setResponseDate] = useState(activityDateMax || todayActivityDate);
   const [teamLeadName, setTeamLeadName] = useState("");
   const [responseStatus, setResponseStatus] = useState<ResponseStatus>("");
   const [rows, setRows] = useState<ResponseRow[]>([createRow()]);
@@ -116,7 +116,7 @@ export function IntakeForm({
     if (state.submittedAt && state.submittedAt !== submissionRef.current && !state.error) {
       formRef.current?.reset();
       setStep(1);
-      setResponseDate(activityDate);
+      setResponseDate(activityDateMax || todayActivityDate);
       setTeamLeadName("");
       setResponseStatus("");
       setRows([createRow()]);
@@ -125,7 +125,7 @@ export function IntakeForm({
     }
 
     submissionRef.current = state.submittedAt;
-  }, [activityDate, state.error, state.submittedAt]);
+  }, [activityDateMax, state.error, state.submittedAt, todayActivityDate]);
 
   const isStep1Complete = Boolean(
     name.trim() && branchId && responseDate && teamLeadName.trim() && responseStatus,
@@ -289,10 +289,15 @@ export function IntakeForm({
                         type="date"
                         value={responseDate}
                         onChange={(event) => setResponseDate(event.target.value)}
-                        min={previousActivityDate}
-                        max={activityDate}
+                        min={activityDateMin || undefined}
+                        max={activityDateMax || undefined}
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                       />
+                      <p className="mt-2 text-xs text-slate-500">
+                        {activityDateSettings.restrictActivityDate
+                          ? "Date is limited to today and yesterday."
+                          : "Any date can be selected."}
+                      </p>
                     </div>
 
                     <div>
