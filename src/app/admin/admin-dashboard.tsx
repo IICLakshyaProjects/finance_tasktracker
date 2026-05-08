@@ -437,7 +437,6 @@ export function AdminDashboard({
           categoryValueId: "",
           categoryValueName: "—",
           totalCount: 0,
-          totalTimeTaken: "0:00",
           totalTimeTakenHours: 0,
           totalTimeTakenMinutes: 0,
           remark: "",
