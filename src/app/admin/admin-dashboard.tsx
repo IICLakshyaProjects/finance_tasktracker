@@ -1,9 +1,13 @@
-"use client";
+﻿"use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { logoutAction } from "../actions";
-import { getActivityDateString, getAllowedActivityDateBounds, type ActivityDateSettings } from "@/lib/activity-date";
+import {
+  getActivityDateString,
+  getAllowedActivityDateBounds,
+  type ActivityDateSettings,
+} from "@/lib/activity-date";
 import {
   addAccountReceivablesAction,
   addBranchRelatedAction,
@@ -127,7 +131,7 @@ const emptyState: AdminActionState = {
 
 function formatDateTime(value: string | null) {
   if (!value) {
-    return "—";
+    return "â€”";
   }
 
   return new Intl.DateTimeFormat("en-US", {
@@ -167,10 +171,6 @@ function responseStatusTone(status: string) {
   return "bg-sky-500/12 text-sky-700 ring-1 ring-sky-400/20";
 }
 
-function formatDailyTime(hours: number, minutes: number) {
-  return `${hours}:${String(minutes).padStart(2, "0")}`;
-}
-
 function normalizeKey(value: string) {
   return value.trim().toLowerCase();
 }
@@ -183,7 +183,7 @@ function escapeCsv(value: string) {
   return value;
 }
 
-function downloadResponsesCsv(rows: ResponseRecord[], filename: string) {
+function downloadResponsesCsv(rows: Array<ResponseRecord | DailyResponseRow>, filename: string) {
   const header = [
     "Name",
     "Status",
@@ -210,7 +210,7 @@ function downloadResponsesCsv(rows: ResponseRecord[], filename: string) {
       String(item.totalCount),
       formatDuration(item.totalTimeTakenHours, item.totalTimeTakenMinutes),
       item.remark,
-      formatDateTime(String(item.createdAt)),
+      item.createdAt ? formatDateTime(String(item.createdAt)) : "—",
     ]
       .map((value) => escapeCsv(value))
       .join(","),
@@ -322,7 +322,6 @@ export function AdminDashboard({
   responses,
   activityDateSettings,
 }: AdminDashboardProps) {
-  const responsePageSize = 50;
   const todayActivityDate = getActivityDateString(0);
   const { min: activityDateMin, max: activityDateMax } = getAllowedActivityDateBounds(
     activityDateSettings,
@@ -330,14 +329,12 @@ export function AdminDashboard({
   const [activeTab, setActiveTab] = useState<TabKey>("users");
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [editingEntity, setEditingEntity] = useState<EditingEntity>(null);
-  const [responseDateFrom, setResponseDateFrom] = useState("");
-  const [responseDateTo, setResponseDateTo] = useState("");
+  const [responseNameFilter, setResponseNameFilter] = useState("");
+  const [responseBranchFilter, setResponseBranchFilter] = useState("");
+  const [responseStatusFilter, setResponseStatusFilter] = useState("");
   const [responseTeamLead, setResponseTeamLead] = useState("");
-  const [responseCategory, setResponseCategory] = useState("");
-  const [responseValue, setResponseValue] = useState("");
   const [dailyResponseDate, setDailyResponseDate] = useState(todayActivityDate);
   const [selectedResponseIds, setSelectedResponseIds] = useState<string[]>([]);
-  const [responsePage, setResponsePage] = useState(1);
 
   const [userCreateState, userCreateAction, userCreatePending] = useActionState(
     createUserAction,
@@ -396,41 +393,6 @@ export function AdminDashboard({
   const accountMessageRef = useRef(accountCreateState.message);
   const accountEditMessageRef = useRef(accountEditState.message);
   const activityDateMessageRef = useRef(activityDateState.message);
-
-  const responseCategoryOptions = useMemo(() => {
-    return Array.from(new Set(responses.map((item) => item.categoryLabel))).sort();
-  }, [responses]);
-
-  const responseValueOptions = useMemo(() => {
-    const source = responseCategory ? responses.filter((item) => item.categoryLabel === responseCategory) : responses;
-    return Array.from(new Set(source.map((item) => item.categoryValueName))).sort();
-  }, [responseCategory, responses]);
-
-  const filteredResponses = useMemo(() => {
-    return responses.filter((item) => {
-      if (responseDateFrom && item.responseDate < responseDateFrom) {
-        return false;
-      }
-
-      if (responseDateTo && item.responseDate > responseDateTo) {
-        return false;
-      }
-
-      if (responseTeamLead && !item.teamLeadName.toLowerCase().includes(responseTeamLead.toLowerCase())) {
-        return false;
-      }
-
-      if (responseCategory && item.categoryLabel !== responseCategory) {
-        return false;
-      }
-
-      if (responseValue && item.categoryValueName !== responseValue) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [responseCategory, responseDateFrom, responseDateTo, responseTeamLead, responseValue, responses]);
 
   const activeUsers = useMemo(() => {
     return users
@@ -496,16 +458,38 @@ export function AdminDashboard({
     return rows;
   }, [activeUsers, dailyResponseDate, responses]);
 
-  const totalResponsePages = Math.max(1, Math.ceil(filteredResponses.length / responsePageSize));
-  const activeResponsePage = Math.min(responsePage, totalResponsePages);
-  const paginatedResponses = useMemo(() => {
-    const start = (activeResponsePage - 1) * responsePageSize;
-    return filteredResponses.slice(start, start + responsePageSize);
-  }, [activeResponsePage, filteredResponses]);
+  const responseBranchOptions = useMemo(() => {
+    return Array.from(
+      new Set(dailyResponseRows.map((item) => item.branchName.trim()).filter(Boolean)),
+    ).sort();
+  }, [dailyResponseRows]);
 
-  const filteredResponseIds = useMemo(
-    () => filteredResponses.map((item) => item.id),
-    [filteredResponses],
+  const responseStatusOptions = useMemo(() => {
+    return Array.from(new Set(dailyResponseRows.map((item) => item.status.trim()).filter(Boolean))).sort();
+  }, [dailyResponseRows]);
+
+  const filteredDailyResponseRows = useMemo(() => {
+    return dailyResponseRows.filter((item) => {
+      const nameMatch = responseNameFilter
+        ? item.name.toLowerCase().includes(responseNameFilter.toLowerCase())
+        : true;
+      const branchMatch = responseBranchFilter
+        ? item.branchName.toLowerCase() === responseBranchFilter.toLowerCase()
+        : true;
+      const statusMatch = responseStatusFilter
+        ? item.status.toLowerCase() === responseStatusFilter.toLowerCase()
+        : true;
+      const teamLeadMatch = responseTeamLead
+        ? item.teamLeadName.toLowerCase().includes(responseTeamLead.toLowerCase())
+        : true;
+
+      return nameMatch && branchMatch && statusMatch && teamLeadMatch;
+    });
+  }, [dailyResponseRows, responseBranchFilter, responseNameFilter, responseStatusFilter, responseTeamLead]);
+
+  const visibleResponseIds = useMemo(
+    () => filteredDailyResponseRows.filter((item) => !item.isPlaceholder).map((item) => item.id),
+    [filteredDailyResponseRows],
   );
 
   const selectedResponses = useMemo(
@@ -514,16 +498,14 @@ export function AdminDashboard({
   );
 
   const allFilteredSelected =
-    filteredResponses.length > 0 &&
-    filteredResponses.every((item) => selectedResponseIds.includes(item.id));
+    visibleResponseIds.length > 0 &&
+    visibleResponseIds.every((item) => selectedResponseIds.includes(item));
 
   const resetResponseFilters = () => {
-    setResponseDateFrom("");
-    setResponseDateTo("");
+    setResponseNameFilter("");
+    setResponseBranchFilter("");
+    setResponseStatusFilter("");
     setResponseTeamLead("");
-    setResponseCategory("");
-    setResponseValue("");
-    setResponsePage(1);
   };
 
   useEffect(() => {
@@ -1099,107 +1081,54 @@ export function AdminDashboard({
                 </form>
                 <InlineStatus state={activityDateState} />
               </div>
-              <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_40px_rgba(15,23,42,0.04)]">
-                <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                      Daily roster
-                    </p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Shows every registered user for the selected date. Empty users stay at 0 until a response is saved.
-                    </p>
-                  </div>
-                  <div className="w-full sm:w-56">
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Date
-                    </label>
-                    <input
-                      type="date"
-                      value={dailyResponseDate}
-                      onChange={(event) => setDailyResponseDate(event.target.value)}
-                      min={activityDateMin || undefined}
-                      max={activityDateMax || undefined}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                    />
-                  </div>
-                </div>
-                <div className="overflow-hidden rounded-2xl border border-slate-200">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-200">
-                      <thead className="bg-slate-50">
-                        <tr className="text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                          <th className="px-4 py-3">Name</th>
-                          <th className="px-4 py-3">Status</th>
-                          <th className="px-4 py-3">Branch</th>
-                          <th className="px-4 py-3">Date</th>
-                          <th className="px-4 py-3">Team Lead</th>
-                          <th className="px-4 py-3">Category</th>
-                          <th className="px-4 py-3">Value</th>
-                          <th className="px-4 py-3">Count</th>
-                          <th className="px-4 py-3">Total Time Taken</th>
-                          <th className="px-4 py-3">Remark</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {dailyResponseRows.length ? (
-                          dailyResponseRows.map((item) => (
-                            <tr key={item.id} className={`align-top ${item.isPlaceholder ? "bg-slate-50/60" : ""}`}>
-                              <td className="px-4 py-4">
-                                <p className="font-medium text-slate-950">{item.name || "—"}</p>
-                              </td>
-                              <td className="px-4 py-4">
-                                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${responseStatusTone(item.status)}`}>
-                                  {item.isPlaceholder ? "Pending" : item.status}
-                                </span>
-                              </td>
-                              <td className="px-4 py-4 text-sm text-slate-700">{item.branchName || "—"}</td>
-                              <td className="px-4 py-4 text-sm text-slate-700">{item.responseDate || "—"}</td>
-                              <td className="px-4 py-4 text-sm text-slate-700">{item.teamLeadName || "—"}</td>
-                              <td className="px-4 py-4 text-sm text-slate-700">{item.categoryLabel || "—"}</td>
-                              <td className="px-4 py-4 text-sm text-slate-700">{item.categoryValueName || "—"}</td>
-                              <td className="px-4 py-4 text-sm font-medium text-slate-700">{item.totalCount}</td>
-                              <td className="px-4 py-4 text-sm text-slate-700">
-                                {formatDailyTime(item.totalTimeTakenHours, item.totalTimeTakenMinutes)}
-                              </td>
-                              <td className="px-4 py-4 text-sm leading-6 text-slate-700 whitespace-pre-wrap break-words">
-                                {item.remark || "—"}
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td className="px-4 py-8 text-sm text-slate-500" colSpan={10}>
-                              No users available for the selected date.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
+
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-[0_12px_40px_rgba(15,23,42,0.04)]">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Filters</p>
                     <p className="mt-1 text-sm text-slate-600">
-                      Showing {filteredResponses.length} of {responses.length} responses
+                      Showing {filteredDailyResponseRows.length} of {dailyResponseRows.length} rows for the selected date
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <div className="min-w-[180px]">
+                      <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                        Activity date
+                      </label>
+                      <input
+                        type="date"
+                        value={dailyResponseDate}
+                        onChange={(event) => setDailyResponseDate(event.target.value)}
+                        min={activityDateMin || undefined}
+                        max={activityDateMax || undefined}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={resetResponseFilters}
+                      className="rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+                    >
+                      Clear filters
+                    </button>
                     <button
                       type="button"
                       onClick={() => downloadResponsesCsv(selectedResponses, "selected-responses.csv")}
                       disabled={!selectedResponses.length}
-                      className="rounded-full border border-sky-200 bg-white px-4 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-full border border-sky-200 bg-white px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Download selected
                     </button>
                     <button
                       type="button"
-                      onClick={() => downloadResponsesCsv(filteredResponses, "filtered-responses.csv")}
-                      disabled={!filteredResponses.length}
-                      className="rounded-full border border-sky-200 bg-white px-4 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() =>
+                        downloadResponsesCsv(
+                          filteredDailyResponseRows,
+                          `daily-response-${dailyResponseDate || "selected"}.csv`,
+                        )
+                      }
+                      disabled={!filteredDailyResponseRows.length}
+                      className="rounded-full border border-sky-200 bg-white px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Bulk download
                     </button>
@@ -1210,93 +1139,50 @@ export function AdminDashboard({
                       <button
                         type="submit"
                         disabled={!selectedResponseIds.length || responseDeletePending}
-                        className="rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-full border border-rose-200 bg-white px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {responseDeletePending ? "Deleting..." : "Delete selected"}
                       </button>
                     </form>
                     <form action={responseDeleteAction}>
-                      {filteredResponseIds.map((id) => (
+                      {visibleResponseIds.map((id) => (
                         <input key={id} type="hidden" name="ids" value={id} />
                       ))}
                       <button
                         type="submit"
-                        disabled={!filteredResponseIds.length || responseDeletePending}
-                        className="rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!visibleResponseIds.length || responseDeletePending}
+                        className="rounded-full border border-rose-200 bg-white px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {responseDeletePending ? "Deleting..." : "Bulk delete"}
                       </button>
                     </form>
-                    <button
-                      type="button"
-                      onClick={resetResponseFilters}
-                      className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
-                    >
-                      Clear filters
-                    </button>
                   </div>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-5">
+                <div className="grid gap-4 xl:grid-cols-4">
                   <div>
                     <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Date from
-                    </label>
-                    <input
-                      type="date"
-                      value={responseDateFrom}
-                      onChange={(event) => {
-                        setResponseDateFrom(event.target.value);
-                        setResponsePage(1);
-                      }}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Date to
-                    </label>
-                    <input
-                      type="date"
-                      value={responseDateTo}
-                      onChange={(event) => {
-                        setResponseDateTo(event.target.value);
-                        setResponsePage(1);
-                      }}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Team leader
+                      Name
                     </label>
                     <input
                       type="text"
-                      value={responseTeamLead}
-                      onChange={(event) => {
-                        setResponseTeamLead(event.target.value);
-                        setResponsePage(1);
-                      }}
-                      placeholder="Search team lead"
+                      value={responseNameFilter}
+                      onChange={(event) => setResponseNameFilter(event.target.value)}
+                      placeholder="Search name"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                     />
                   </div>
                   <div>
                     <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Category
+                      Branch
                     </label>
                     <select
-                      value={responseCategory}
-                      onChange={(event) => {
-                        const nextCategory = event.target.value;
-                        setResponseCategory(nextCategory);
-                        setResponseValue("");
-                        setResponsePage(1);
-                      }}
+                      value={responseBranchFilter}
+                      onChange={(event) => setResponseBranchFilter(event.target.value)}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                     >
-                      <option value="">All categories</option>
-                      {responseCategoryOptions.map((item) => (
+                      <option value="">All branches</option>
+                      {responseBranchOptions.map((item) => (
                         <option key={item} value={item}>
                           {item}
                         </option>
@@ -1305,27 +1191,35 @@ export function AdminDashboard({
                   </div>
                   <div>
                     <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      Value
+                      Status
                     </label>
                     <select
-                      value={responseValue}
-                      onChange={(event) => {
-                        setResponseValue(event.target.value);
-                        setResponsePage(1);
-                      }}
+                      value={responseStatusFilter}
+                      onChange={(event) => setResponseStatusFilter(event.target.value)}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                     >
-                      <option value="">All values</option>
-                      {responseValueOptions.map((item) => (
+                      <option value="">All statuses</option>
+                      {responseStatusOptions.map((item) => (
                         <option key={item} value={item}>
                           {item}
                         </option>
                       ))}
                     </select>
                   </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                      Team lead
+                    </label>
+                    <input
+                      type="text"
+                      value={responseTeamLead}
+                      onChange={(event) => setResponseTeamLead(event.target.value)}
+                      placeholder="Search team lead"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                    />
+                  </div>
                 </div>
               </div>
-
               <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200">
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200">
@@ -1335,15 +1229,15 @@ export function AdminDashboard({
                           <input
                             type="checkbox"
                             checked={allFilteredSelected}
-                            disabled={!filteredResponseIds.length}
+                            disabled={!visibleResponseIds.length}
                             onChange={(event) => {
                               const nextChecked = event.target.checked;
                               setSelectedResponseIds((current) => {
                                 if (nextChecked) {
-                                  return Array.from(new Set([...current, ...filteredResponseIds]));
+                                  return Array.from(new Set([...current, ...visibleResponseIds]));
                                 }
 
-                                return current.filter((id) => !filteredResponseIds.includes(id));
+                                return current.filter((id) => !visibleResponseIds.includes(id));
                               });
                             }}
                             className="h-4 w-4 rounded border-slate-300 text-sky-500 focus:ring-sky-400"
@@ -1363,37 +1257,41 @@ export function AdminDashboard({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {paginatedResponses.length ? (
-                        paginatedResponses.map((item) => (
-                          <tr key={item.id} className="align-top">
+                      {filteredDailyResponseRows.length ? (
+                        filteredDailyResponseRows.map((item) => (
+                          <tr key={item.id} className={`align-top ${item.isPlaceholder ? "bg-slate-50/60" : ""}`}>
                             <td className="px-4 py-4">
                               <input
                                 type="checkbox"
-                                checked={selectedResponseIds.includes(item.id)}
+                                checked={!item.isPlaceholder && selectedResponseIds.includes(item.id)}
+                                disabled={item.isPlaceholder}
                                 onChange={(event) => {
                                   const nextChecked = event.target.checked;
+                                  if (item.isPlaceholder) {
+                                    return;
+                                  }
                                   setSelectedResponseIds((current) =>
                                     nextChecked
                                       ? Array.from(new Set([...current, item.id]))
                                       : current.filter((id) => id !== item.id),
                                   );
                                 }}
-                                className="h-4 w-4 rounded border-slate-300 text-sky-500 focus:ring-sky-400"
+                                className="h-4 w-4 rounded border-slate-300 text-sky-500 focus:ring-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
                               />
                             </td>
                             <td className="px-4 py-4">
-                              <p className="font-medium text-slate-950">{item.name}</p>
+                              <p className="font-medium text-slate-950">{item.name || "—"}</p>
                             </td>
                             <td className="px-4 py-4">
                               <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${responseStatusTone(item.status)}`}>
-                                {item.status}
+                                {item.isPlaceholder ? "Pending" : item.status}
                               </span>
                             </td>
-                            <td className="px-4 py-4 text-sm text-slate-700">{item.branchName}</td>
-                            <td className="px-4 py-4 text-sm text-slate-700">{item.responseDate}</td>
-                            <td className="px-4 py-4 text-sm text-slate-700">{item.teamLeadName}</td>
-                            <td className="px-4 py-4 text-sm text-slate-700">{item.categoryLabel}</td>
-                            <td className="px-4 py-4 text-sm text-slate-700">{item.categoryValueName}</td>
+                            <td className="px-4 py-4 text-sm text-slate-700">{item.branchName || "—"}</td>
+                            <td className="px-4 py-4 text-sm text-slate-700">{item.responseDate || "—"}</td>
+                            <td className="px-4 py-4 text-sm text-slate-700">{item.teamLeadName || "—"}</td>
+                            <td className="px-4 py-4 text-sm text-slate-700">{item.categoryLabel || "—"}</td>
+                            <td className="px-4 py-4 text-sm text-slate-700">{item.categoryValueName || "—"}</td>
                             <td className="px-4 py-4 text-sm font-medium text-slate-700">{item.totalCount}</td>
                             <td className="px-4 py-4 text-sm text-slate-700">
                               {formatDuration(item.totalTimeTakenHours, item.totalTimeTakenMinutes)}
@@ -1401,7 +1299,9 @@ export function AdminDashboard({
                             <td className="px-4 py-4 text-sm leading-6 text-slate-700 whitespace-pre-wrap break-words">
                               {item.remark || "—"}
                             </td>
-                            <td className="px-4 py-4 text-sm text-slate-700">{formatDateTime(item.createdAt)}</td>
+                            <td className="px-4 py-4 text-sm text-slate-700">
+                              {item.createdAt ? formatDateTime(item.createdAt) : "—"}
+                            </td>
                           </tr>
                         ))
                         ) : (
@@ -1413,29 +1313,6 @@ export function AdminDashboard({
                       )}
                     </tbody>
                   </table>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-slate-600">
-                  Page {activeResponsePage} of {totalResponsePages}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setResponsePage((current) => Math.max(1, current - 1))}
-                    disabled={activeResponsePage <= 1}
-                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setResponsePage((current) => Math.min(totalResponsePages, current + 1))}
-                    disabled={activeResponsePage >= totalResponsePages}
-                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Next
-                  </button>
                 </div>
               </div>
               <InlineStatus state={responseDeleteState} />
@@ -1562,3 +1439,5 @@ function EditModal({
     </div>
   );
 }
+
+
