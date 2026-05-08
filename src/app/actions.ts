@@ -35,7 +35,8 @@ type ResponseRowInput = {
   category: ResponseCategory;
   categoryValueId: string;
   totalCount: string;
-  totalTimeTaken: string;
+  totalTimeTakenHours: string;
+  totalTimeTakenMinutes: string;
   remark: string;
 };
 
@@ -85,7 +86,8 @@ function parseResponseRows(raw: string): ResponseRowInput[] | null {
         category: row.category,
         categoryValueId: String(row.categoryValueId ?? "").trim(),
         totalCount: String(row.totalCount ?? "").trim(),
-        totalTimeTaken: String(row.totalTimeTaken ?? "").trim(),
+        totalTimeTakenHours: String(row.totalTimeTakenHours ?? "").trim(),
+        totalTimeTakenMinutes: String(row.totalTimeTakenMinutes ?? "").trim(),
         remark: String(row.remark ?? "").trim(),
       });
     }
@@ -150,6 +152,33 @@ function readString(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
+function normalizeDuration(hours: number, minutes: number) {
+  const totalMinutes = hours * 60 + minutes;
+  const normalizedHours = Math.floor(totalMinutes / 60);
+  const normalizedMinutes = totalMinutes % 60;
+
+  return {
+    hours: normalizedHours,
+    minutes: normalizedMinutes,
+  };
+}
+
+function getActivityDateString(offsetDays = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+  }).format(date);
+}
+
+function getActivityDateBounds() {
+  return {
+    previous: getActivityDateString(-1),
+    current: getActivityDateString(0),
+  };
+}
+
 export async function createResponseAction(
   previousState: ResponseState = initialResponseState,
   formData: FormData,
@@ -172,7 +201,12 @@ export async function createResponseAction(
   }
 
   if (!responseDate) {
-    return { error: "Choose a date.", message: "", submittedAt: 0 };
+    return { error: "Choose the activity date.", message: "", submittedAt: 0 };
+  }
+
+  const { previous, current } = getActivityDateBounds();
+  if (responseDate !== previous && responseDate !== current) {
+    return { error: "Choose today's or yesterday's activity date.", message: "", submittedAt: 0 };
   }
 
   if (!teamLeadName) {
@@ -201,7 +235,8 @@ export async function createResponseAction(
       categoryValueId: "",
       categoryValueName: "",
       totalCount: 0,
-      totalTimeTaken: "",
+      totalTimeTakenHours: 0,
+      totalTimeTakenMinutes: 0,
       remark: "",
     });
 
@@ -232,9 +267,17 @@ export async function createResponseAction(
       return { error: `Row ${rowNumber}: enter a valid total count.`, message: "", submittedAt: 0 };
     }
 
-    if (!row.totalTimeTaken) {
-      return { error: `Row ${rowNumber}: enter the total time taken.`, message: "", submittedAt: 0 };
+    const totalTimeTakenHours = Number.parseInt(row.totalTimeTakenHours, 10);
+    if (!Number.isInteger(totalTimeTakenHours) || totalTimeTakenHours < 0) {
+      return { error: `Row ${rowNumber}: enter valid time taken hours.`, message: "", submittedAt: 0 };
     }
+
+    const totalTimeTakenMinutes = Number.parseInt(row.totalTimeTakenMinutes, 10);
+    if (!Number.isInteger(totalTimeTakenMinutes) || totalTimeTakenMinutes < 0) {
+      return { error: `Row ${rowNumber}: enter valid time taken minutes.`, message: "", submittedAt: 0 };
+    }
+
+    const normalizedDuration = normalizeDuration(totalTimeTakenHours, totalTimeTakenMinutes);
 
     const categoryLabel =
       row.category === "account-receivable" ? "Account Receivable related" : "Branch related";
@@ -260,7 +303,8 @@ export async function createResponseAction(
       categoryValueId: categoryValue.id,
       categoryValueName: categoryValue.name,
       totalCount,
-      totalTimeTaken: row.totalTimeTaken,
+      totalTimeTakenHours: normalizedDuration.hours,
+      totalTimeTakenMinutes: normalizedDuration.minutes,
       remark: row.remark,
     });
   }

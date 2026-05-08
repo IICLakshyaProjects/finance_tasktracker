@@ -55,7 +55,8 @@ type ResponseRecord = {
   categoryValueId: string;
   categoryValueName: string;
   totalCount: number;
-  totalTimeTaken: string;
+  totalTimeTakenHours: number;
+  totalTimeTakenMinutes: number;
   remark: string;
   createdAt: string;
 };
@@ -131,6 +132,16 @@ function formatDateTime(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatDuration(hours: number, minutes: number) {
+  const safeHours = Number.isFinite(hours) ? Math.max(0, Math.trunc(hours)) : 0;
+  const safeMinutes = Number.isFinite(minutes) ? Math.max(0, Math.trunc(minutes)) : 0;
+  const totalMinutes = safeHours * 60 + safeMinutes;
+  const normalizedHours = Math.floor(totalMinutes / 60);
+  const normalizedMinutes = totalMinutes % 60;
+
+  return `${normalizedHours}:${String(normalizedMinutes).padStart(2, "0")}`;
+}
+
 function responseStatusTone(status: string) {
   const normalized = status.toLowerCase();
 
@@ -163,7 +174,7 @@ function downloadResponsesCsv(rows: ResponseRecord[], filename: string) {
     "Category",
     "Value",
     "Count",
-    "Time",
+    "Total Time Taken",
     "Remark",
     "Created",
   ];
@@ -178,7 +189,7 @@ function downloadResponsesCsv(rows: ResponseRecord[], filename: string) {
       item.categoryLabel,
       item.categoryValueName,
       String(item.totalCount),
-      item.totalTimeTaken,
+      formatDuration(item.totalTimeTakenHours, item.totalTimeTakenMinutes),
       item.remark,
       formatDateTime(String(item.createdAt)),
     ]
@@ -1135,7 +1146,7 @@ export function AdminDashboard({
                         <th className="px-4 py-3">Category</th>
                         <th className="px-4 py-3">Value</th>
                         <th className="px-4 py-3">Count</th>
-                        <th className="px-4 py-3">Time</th>
+                        <th className="px-4 py-3">Total Time Taken</th>
                         <th className="px-4 py-3">Remark</th>
                         <th className="px-4 py-3">Created</th>
                       </tr>
@@ -1173,7 +1184,9 @@ export function AdminDashboard({
                             <td className="px-4 py-4 text-sm text-slate-700">{item.categoryLabel}</td>
                             <td className="px-4 py-4 text-sm text-slate-700">{item.categoryValueName}</td>
                             <td className="px-4 py-4 text-sm font-medium text-slate-700">{item.totalCount}</td>
-                            <td className="px-4 py-4 text-sm text-slate-700">{item.totalTimeTaken}</td>
+                            <td className="px-4 py-4 text-sm text-slate-700">
+                              {formatDuration(item.totalTimeTakenHours, item.totalTimeTakenMinutes)}
+                            </td>
                             <td className="px-4 py-4 text-sm leading-6 text-slate-700 whitespace-pre-wrap break-words">
                               {item.remark || "—"}
                             </td>

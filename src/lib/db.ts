@@ -10,7 +10,7 @@ const globalForDb = globalThis as typeof globalThis & {
   schemaBootstrapVersion?: number;
 };
 
-const SCHEMA_BOOTSTRAP_VERSION = 12;
+const SCHEMA_BOOTSTRAP_VERSION = 13;
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -75,7 +75,9 @@ async function ensureSchema() {
           "categoryValueName" text NOT NULL,
           "responseDate" text NOT NULL,
           "totalCount" integer NOT NULL,
-          "totalTimeTaken" text NOT NULL,
+          "totalTimeTaken" text NOT NULL DEFAULT '0:00',
+          "totalTimeTakenHours" integer NOT NULL DEFAULT 0,
+          "totalTimeTakenMinutes" integer NOT NULL DEFAULT 0,
           remark text NOT NULL DEFAULT '',
           "createdAt" timestamptz NOT NULL DEFAULT now(),
           "updatedAt" timestamptz NOT NULL DEFAULT now()
@@ -102,7 +104,36 @@ async function ensureSchema() {
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'USER';
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'working';
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS remark text NOT NULL DEFAULT '';
+        ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS "totalTimeTaken" text NOT NULL DEFAULT '0:00';
+        ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS "totalTimeTakenHours" integer NOT NULL DEFAULT 0;
+        ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS "totalTimeTakenMinutes" integer NOT NULL DEFAULT 0;
       `);
+
+      const legacyTimeColumn = await pool.query<{ exists: boolean }>(
+        `
+          SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'Responses' AND column_name = 'totalTimeTaken'
+          ) AS exists
+        `,
+      );
+
+      if (legacyTimeColumn.rows[0]?.exists) {
+        await pool.query(`
+          UPDATE "Responses"
+          SET
+            "totalTimeTakenHours" = COALESCE(
+              (regexp_match("totalTimeTaken", '(\\d+)\\s*h', 'i'))[1]::int,
+              0
+            ),
+            "totalTimeTakenMinutes" = COALESCE(
+              (regexp_match("totalTimeTaken", '(\\d+)\\s*m', 'i'))[1]::int,
+              0
+            )
+          WHERE COALESCE("totalTimeTaken", '') <> ''
+        `);
+      }
 
       const legacyUserTable = await pool.query<{ exists: boolean }>(
         `SELECT to_regclass('"User"') IS NOT NULL AS exists`
@@ -154,6 +185,16 @@ async function query<T extends QueryResultRow>(text: string, values: unknown[] =
   return pool.query<T>(text, values);
 }
 
+function formatDuration(hours: number, minutes: number) {
+  const normalizedHours = Number.isFinite(hours) ? Math.max(0, Math.trunc(hours)) : 0;
+  const normalizedMinutes = Number.isFinite(minutes) ? Math.max(0, Math.trunc(minutes)) : 0;
+  const totalMinutes = normalizedHours * 60 + normalizedMinutes;
+  const finalHours = Math.floor(totalMinutes / 60);
+  const finalMinutes = totalMinutes % 60;
+
+  return `${finalHours}:${String(finalMinutes).padStart(2, "0")}`;
+}
+
 export type BranchRelatedRecord = {
   id: string;
   name: string;
@@ -188,6 +229,8 @@ export type ResponseRecord = {
   categoryValueName: string;
   totalCount: number;
   totalTimeTaken: string;
+  totalTimeTakenHours: number;
+  totalTimeTakenMinutes: number;
   remark: string;
   createdAt: Date;
 };
@@ -284,6 +327,8 @@ export async function listResponses(): Promise<ResponseRecord[]> {
         "categoryValueName",
         "totalCount",
         "totalTimeTaken",
+        "totalTimeTakenHours",
+        "totalTimeTakenMinutes",
         remark,
         "createdAt"
       FROM "Responses"
@@ -875,7 +920,8 @@ export async function createResponse(input: {
   categoryValueId: string;
   categoryValueName: string;
   totalCount: number;
-  totalTimeTaken: string;
+  totalTimeTakenHours: number;
+  totalTimeTakenMinutes: number;
   remark: string;
 }) {
   const id = crypto.randomUUID();
@@ -898,10 +944,12 @@ export async function createResponse(input: {
         "categoryValueName",
         "totalCount",
         "totalTimeTaken",
+        "totalTimeTakenHours",
+        "totalTimeTakenMinutes",
         remark
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
       )
       RETURNING
         id,
@@ -917,6 +965,8 @@ export async function createResponse(input: {
         "categoryValueName",
         "totalCount",
         "totalTimeTaken",
+        "totalTimeTakenHours",
+        "totalTimeTakenMinutes",
         remark,
         "createdAt"
     `,
@@ -935,7 +985,9 @@ export async function createResponse(input: {
       input.categoryValueId,
       input.categoryValueName,
       input.totalCount,
-      input.totalTimeTaken,
+      formatDuration(input.totalTimeTakenHours, input.totalTimeTakenMinutes),
+      input.totalTimeTakenHours,
+      input.totalTimeTakenMinutes,
       input.remark,
     ],
   );
@@ -953,7 +1005,9 @@ export async function createResponse(input: {
     categoryValueId: input.categoryValueId,
     categoryValueName: input.categoryValueName,
     totalCount: input.totalCount,
-    totalTimeTaken: input.totalTimeTaken,
+    totalTimeTaken: formatDuration(input.totalTimeTakenHours, input.totalTimeTakenMinutes),
+    totalTimeTakenHours: input.totalTimeTakenHours,
+    totalTimeTakenMinutes: input.totalTimeTakenMinutes,
     remark: input.remark,
     createdAt: new Date(),
   };
