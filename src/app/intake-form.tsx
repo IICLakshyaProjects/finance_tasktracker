@@ -29,7 +29,8 @@ type ResponseRow = {
   category: CategoryKey | "";
   categoryValueId: string;
   totalCount: string;
-  totalTimeTaken: string;
+  totalTimeTakenHours: string;
+  totalTimeTakenMinutes: string;
   remark: string;
 };
 
@@ -58,7 +59,8 @@ function createRow(): ResponseRow {
     category: "",
     categoryValueId: "",
     totalCount: "",
-    totalTimeTaken: "",
+    totalTimeTakenHours: "",
+    totalTimeTakenMinutes: "",
     remark: "",
   };
 }
@@ -79,6 +81,15 @@ function getOptionsForCategory(
   return [];
 }
 
+function getActivityDateString(offsetDays = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+  }).format(date);
+}
+
 export function IntakeForm({
   initialName,
   initialBranchId,
@@ -88,14 +99,12 @@ export function IntakeForm({
   branchRelated,
 }: IntakeFormProps) {
   const [state, formAction, pending] = useActionState(createResponseAction, initialState);
-  const today = new Date();
-  const localToday = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 10);
+  const activityDate = getActivityDateString(0);
+  const previousActivityDate = getActivityDateString(-1);
   const [step, setStep] = useState<Step>(1);
   const [name] = useState(initialName);
   const [branchId] = useState(initialBranchId);
-  const [responseDate, setResponseDate] = useState(localToday);
+  const [responseDate, setResponseDate] = useState(activityDate);
   const [teamLeadName, setTeamLeadName] = useState("");
   const [responseStatus, setResponseStatus] = useState<ResponseStatus>("");
   const [rows, setRows] = useState<ResponseRow[]>([createRow()]);
@@ -107,7 +116,7 @@ export function IntakeForm({
     if (state.submittedAt && state.submittedAt !== submissionRef.current && !state.error) {
       formRef.current?.reset();
       setStep(1);
-      setResponseDate(localToday);
+      setResponseDate(activityDate);
       setTeamLeadName("");
       setResponseStatus("");
       setRows([createRow()]);
@@ -116,7 +125,7 @@ export function IntakeForm({
     }
 
     submissionRef.current = state.submittedAt;
-  }, [localToday, state.error, state.submittedAt]);
+  }, [activityDate, state.error, state.submittedAt]);
 
   const isStep1Complete = Boolean(
     name.trim() && branchId && responseDate && teamLeadName.trim() && responseStatus,
@@ -224,7 +233,8 @@ export function IntakeForm({
                         category: row.category,
                         categoryValueId: row.categoryValueId,
                         totalCount: row.totalCount,
-                        totalTimeTaken: row.totalTimeTaken,
+                        totalTimeTakenHours: row.totalTimeTakenHours,
+                        totalTimeTakenMinutes: row.totalTimeTakenMinutes,
                         remark: row.remark,
                       };
                     }),
@@ -272,13 +282,15 @@ export function IntakeForm({
                         htmlFor="responseDate"
                         className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600"
                       >
-                        Date
+                        Activity Date
                       </label>
                       <input
                         id="responseDate"
                         type="date"
                         value={responseDate}
                         onChange={(event) => setResponseDate(event.target.value)}
+                        min={previousActivityDate}
+                        max={activityDate}
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                       />
                     </div>
@@ -344,9 +356,9 @@ export function IntakeForm({
                     return (
                       <div
                         key={row.id}
-                        className="grid gap-4 lg:items-start lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,0.75fr)_minmax(0,0.95fr)_minmax(0,1.5fr)_auto_auto]"
+                        className="grid gap-4 lg:items-start lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,0.75fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto_auto]"
                       >
-                        <div>
+                        <div className="flex h-full flex-col">
                           <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600">
                             Category
                           </label>
@@ -356,7 +368,7 @@ export function IntakeForm({
                               const nextCategory = event.target.value as CategoryKey | "";
                               updateRow(row.id, { category: nextCategory });
                             }}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                            className="mt-auto w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                           >
                             <option value="">Select a category</option>
                             {categoryOptions.map((item) => (
@@ -367,7 +379,7 @@ export function IntakeForm({
                           </select>
                         </div>
 
-                        <div>
+                        <div className="flex h-full flex-col">
                           <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600">
                             Values from admin
                           </label>
@@ -377,7 +389,7 @@ export function IntakeForm({
                               updateRow(row.id, { categoryValueId: event.target.value })
                             }
                             disabled={!row.category || !rowOptions.length}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                            className="mt-auto w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                           >
                             <option value="">
                               {!row.category
@@ -394,7 +406,7 @@ export function IntakeForm({
                           </select>
                         </div>
 
-                        <div>
+                        <div className="flex h-full flex-col">
                           <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600">
                             Count
                           </label>
@@ -405,26 +417,59 @@ export function IntakeForm({
                             value={row.totalCount}
                             onChange={(event) => updateRow(row.id, { totalCount: event.target.value })}
                             placeholder="12"
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                            className="mt-auto w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium tabular-nums text-slate-950 outline-none transition [appearance:textfield] placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                           />
                         </div>
 
-                        <div>
+                        <div className="flex h-full flex-col">
                           <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600">
                             Total time taken
                           </label>
-                          <input
-                            type="text"
-                            value={row.totalTimeTaken}
-                            onChange={(event) =>
-                              updateRow(row.id, { totalTimeTaken: event.target.value })
-                            }
-                            placeholder="1h 30m"
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                          />
+                          <div className="mt-auto grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end">
+                            <div className="flex h-full flex-col">
+                              <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.06em] text-slate-500">
+                                Hours
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                inputMode="numeric"
+                                value={row.totalTimeTakenHours}
+                                onChange={(event) =>
+                                  updateRow(row.id, { totalTimeTakenHours: event.target.value })
+                                }
+                                placeholder="0"
+                                className="mt-auto w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium tabular-nums text-slate-950 outline-none transition [appearance:textfield] placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              />
+                            </div>
+
+                            <div className="hidden h-[52px] items-center justify-center px-1 text-2xl font-semibold leading-none text-slate-400 sm:flex">
+                              :
+                            </div>
+
+                            <div className="flex h-full flex-col">
+                              <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.06em] text-slate-500">
+                                Minutes
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="59"
+                                step="1"
+                                inputMode="numeric"
+                                value={row.totalTimeTakenMinutes}
+                                onChange={(event) =>
+                                  updateRow(row.id, { totalTimeTakenMinutes: event.target.value })
+                                }
+                                placeholder="30"
+                                className="mt-auto w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium tabular-nums text-slate-950 outline-none transition [appearance:textfield] placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              />
+                            </div>
+                          </div>
                         </div>
 
-                        <div>
+                        <div className="flex h-full flex-col">
                           <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600">
                             Remark
                           </label>
@@ -433,11 +478,11 @@ export function IntakeForm({
                             onChange={(event) => updateRow(row.id, { remark: event.target.value })}
                             placeholder="Add one or more paragraphs of notes"
                             rows={4}
-                            className="min-h-[132px] w-full resize-y rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                            className="mt-auto min-h-[132px] w-full resize-y rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                           />
                         </div>
 
-                        <div className="flex items-end gap-2">
+                        <div className="flex h-full items-end gap-2">
                           <button
                             type="button"
                             onClick={addRow}
