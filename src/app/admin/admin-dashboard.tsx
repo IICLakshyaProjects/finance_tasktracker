@@ -67,10 +67,6 @@ type ResponseRecord = {
   createdAt: string;
 };
 
-type DailyResponseRow = ResponseRecord & {
-  isPlaceholder: boolean;
-};
-
 type UserRecord = {
   id: string;
   name: string | null;
@@ -171,10 +167,6 @@ function responseStatusTone(status: string) {
   return "bg-sky-500/12 text-sky-700 ring-1 ring-sky-400/20";
 }
 
-function normalizeKey(value: string) {
-  return value.trim().toLowerCase();
-}
-
 function escapeCsv(value: string) {
   if (/[",\n]/.test(value)) {
     return `"${value.replaceAll('"', '""')}"`;
@@ -183,7 +175,7 @@ function escapeCsv(value: string) {
   return value;
 }
 
-function downloadResponsesCsv(rows: Array<ResponseRecord | DailyResponseRow>, filename: string) {
+function downloadResponsesCsv(rows: ResponseRecord[], filename: string) {
   const header = [
     "Name",
     "Status",
@@ -333,7 +325,8 @@ export function AdminDashboard({
   const [responseBranchFilter, setResponseBranchFilter] = useState("");
   const [responseStatusFilter, setResponseStatusFilter] = useState("");
   const [responseTeamLead, setResponseTeamLead] = useState("");
-  const [dailyResponseDate, setDailyResponseDate] = useState(todayActivityDate);
+  const [responseDateFrom, setResponseDateFrom] = useState(todayActivityDate);
+  const [responseDateTo, setResponseDateTo] = useState(todayActivityDate);
   const [selectedResponseIds, setSelectedResponseIds] = useState<string[]>([]);
 
   const [userCreateState, userCreateAction, userCreatePending] = useActionState(
@@ -394,81 +387,17 @@ export function AdminDashboard({
   const accountEditMessageRef = useRef(accountEditState.message);
   const activityDateMessageRef = useRef(activityDateState.message);
 
-  const activeUsers = useMemo(() => {
-    return users
-      .filter((user) => user.role !== "ADMIN")
-      .slice()
-      .sort((a, b) => (a.name ?? a.username).localeCompare(b.name ?? b.username));
-  }, [users]);
+  const filteredResponseRows = useMemo(() => {
+    const from = responseDateFrom.trim();
+    const to = responseDateTo.trim();
+    const lowerBound = from && to ? (from <= to ? from : to) : from || to;
+    const upperBound = from && to ? (from <= to ? to : from) : to || from;
 
-  const dailyResponseRows = useMemo(() => {
-    if (!dailyResponseDate) {
-      return [];
-    }
-
-    const responsesForDate = responses.filter((item) => item.responseDate === dailyResponseDate);
-    const groupedByName = new Map<string, ResponseRecord[]>();
-
-    for (const response of responsesForDate) {
-      const key = normalizeKey(response.name);
-      const current = groupedByName.get(key) ?? [];
-      current.push(response);
-      groupedByName.set(key, current);
-    }
-
-    const rows: DailyResponseRow[] = [];
-
-    for (const user of activeUsers) {
-      const displayName = user.name?.trim() || user.username;
-      const key = normalizeKey(displayName);
-      const matches = groupedByName.get(key) ?? [];
-
-      if (!matches.length) {
-        rows.push({
-          id: `placeholder-${user.id}-${dailyResponseDate}`,
-          name: displayName,
-          status: "pending",
-          branchId: user.campusId ?? "",
-          branchName: user.campusName ?? "—",
-          teamLeadName: "—",
-          responseDate: dailyResponseDate,
-          category: "—",
-          categoryLabel: "—",
-          categoryValueId: "",
-          categoryValueName: "—",
-          totalCount: 0,
-          totalTimeTakenHours: 0,
-          totalTimeTakenMinutes: 0,
-          remark: "",
-          createdAt: "",
-          isPlaceholder: true,
-        });
-        continue;
-      }
-
-      for (const response of matches) {
-        rows.push({
-          ...response,
-          isPlaceholder: false,
-        });
-      }
-    }
-
-    return rows;
-  }, [activeUsers, dailyResponseDate, responses]);
-
-  const responseBranchOptions = useMemo(() => {
-    return Array.from(
-      new Set(dailyResponseRows.map((item) => item.branchName.trim()).filter(Boolean)),
-    ).sort();
-  }, [dailyResponseRows]);
-
-  const responseStatusOptions = useMemo(() => {
-    return Array.from(new Set(dailyResponseRows.map((item) => item.status.trim()).filter(Boolean))).sort();
-  }, [dailyResponseRows]);
-
-  const filteredDailyResponseRows = useMemo(() => {
-    return dailyResponseRows.filter((item) => {
+    return responses.filter((item) => {
+      const dateMatch =
+        !lowerBound || !upperBound
+          ? true
+          : item.responseDate >= lowerBound && item.responseDate <= upperBound;
       const nameMatch = responseNameFilter
         ? item.name.toLowerCase().includes(responseNameFilter.toLowerCase())
         : true;
@@ -482,13 +411,25 @@ export function AdminDashboard({
         ? item.teamLeadName.toLowerCase().includes(responseTeamLead.toLowerCase())
         : true;
 
-      return nameMatch && branchMatch && statusMatch && teamLeadMatch;
+      return dateMatch && nameMatch && branchMatch && statusMatch && teamLeadMatch;
     });
-  }, [dailyResponseRows, responseBranchFilter, responseNameFilter, responseStatusFilter, responseTeamLead]);
+  }, [responseBranchFilter, responseDateFrom, responseDateTo, responseNameFilter, responseStatusFilter, responseTeamLead, responses]);
+
+  const responseBranchOptions = useMemo(() => {
+    return Array.from(
+      new Set(filteredResponseRows.map((item) => item.branchName.trim()).filter(Boolean)),
+    ).sort();
+  }, [filteredResponseRows]);
+
+  const responseStatusOptions = useMemo(() => {
+    return Array.from(
+      new Set(filteredResponseRows.map((item) => item.status.trim()).filter(Boolean)),
+    ).sort();
+  }, [filteredResponseRows]);
 
   const visibleResponseIds = useMemo(
-    () => filteredDailyResponseRows.filter((item) => !item.isPlaceholder).map((item) => item.id),
-    [filteredDailyResponseRows],
+    () => filteredResponseRows.map((item) => item.id),
+    [filteredResponseRows],
   );
 
   const selectedResponses = useMemo(
@@ -505,6 +446,8 @@ export function AdminDashboard({
     setResponseBranchFilter("");
     setResponseStatusFilter("");
     setResponseTeamLead("");
+    setResponseDateFrom(todayActivityDate);
+    setResponseDateTo(todayActivityDate);
   };
 
   useEffect(() => {
@@ -1086,18 +1029,31 @@ export function AdminDashboard({
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Filters</p>
                     <p className="mt-1 text-sm text-slate-600">
-                      Showing {filteredDailyResponseRows.length} of {dailyResponseRows.length} rows for the selected date
+                      Showing {filteredResponseRows.length} of {responses.length} rows in the selected date range
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="min-w-[180px]">
                       <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                        Activity date
+                        Activity date from
                       </label>
                       <input
                         type="date"
-                        value={dailyResponseDate}
-                        onChange={(event) => setDailyResponseDate(event.target.value)}
+                        value={responseDateFrom}
+                        onChange={(event) => setResponseDateFrom(event.target.value)}
+                        min={activityDateMin || undefined}
+                        max={activityDateMax || undefined}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                      />
+                    </div>
+                    <div className="min-w-[180px]">
+                      <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                        Activity date to
+                      </label>
+                      <input
+                        type="date"
+                        value={responseDateTo}
+                        onChange={(event) => setResponseDateTo(event.target.value)}
                         min={activityDateMin || undefined}
                         max={activityDateMax || undefined}
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
@@ -1121,12 +1077,9 @@ export function AdminDashboard({
                     <button
                       type="button"
                       onClick={() =>
-                        downloadResponsesCsv(
-                          filteredDailyResponseRows,
-                          `daily-response-${dailyResponseDate || "selected"}.csv`,
-                        )
+                        downloadResponsesCsv(filteredResponseRows, `responses-${responseDateFrom || "start"}-${responseDateTo || "end"}.csv`)
                       }
-                      disabled={!filteredDailyResponseRows.length}
+                      disabled={!filteredResponseRows.length}
                       className="rounded-full border border-sky-200 bg-white px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Bulk download
@@ -1256,19 +1209,15 @@ export function AdminDashboard({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {filteredDailyResponseRows.length ? (
-                        filteredDailyResponseRows.map((item) => (
-                          <tr key={item.id} className={`align-top ${item.isPlaceholder ? "bg-slate-50/60" : ""}`}>
+                      {filteredResponseRows.length ? (
+                        filteredResponseRows.map((item) => (
+                          <tr key={item.id} className="align-top">
                             <td className="px-4 py-4">
                               <input
                                 type="checkbox"
-                                checked={!item.isPlaceholder && selectedResponseIds.includes(item.id)}
-                                disabled={item.isPlaceholder}
+                                checked={selectedResponseIds.includes(item.id)}
                                 onChange={(event) => {
                                   const nextChecked = event.target.checked;
-                                  if (item.isPlaceholder) {
-                                    return;
-                                  }
                                   setSelectedResponseIds((current) =>
                                     nextChecked
                                       ? Array.from(new Set([...current, item.id]))
@@ -1283,7 +1232,7 @@ export function AdminDashboard({
                             </td>
                             <td className="px-4 py-4">
                               <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${responseStatusTone(item.status)}`}>
-                                {item.isPlaceholder ? "Pending" : item.status}
+                                {item.status}
                               </span>
                             </td>
                             <td className="px-4 py-4 text-sm text-slate-700">{item.branchName || "—"}</td>
