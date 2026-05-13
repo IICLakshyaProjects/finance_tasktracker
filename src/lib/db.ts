@@ -285,6 +285,7 @@ export type AccountReceivableRecord = {
 
 export type ResponseRecord = {
   id: string;
+  agentUsername: string;
   name: string;
   status: string;
   branchId: string;

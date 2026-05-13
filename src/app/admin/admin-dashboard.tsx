@@ -4,7 +4,6 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { logoutAction } from "../actions";
 import {
-  getActivityDateString,
   getAllowedActivityDateBounds,
   type ActivityDateSettings,
 } from "@/lib/activity-date";
@@ -50,6 +49,7 @@ type AccountReceivableRecord = {
 
 type ResponseRecord = {
   id: string;
+  agentUsername: string;
   name: string;
   status: string;
   branchId: string;
@@ -314,7 +314,6 @@ export function AdminDashboard({
   responses,
   activityDateSettings,
 }: AdminDashboardProps) {
-  const todayActivityDate = getActivityDateString(0);
   const { min: activityDateMin, max: activityDateMax } = getAllowedActivityDateBounds(
     activityDateSettings,
   );
@@ -325,8 +324,8 @@ export function AdminDashboard({
   const [responseBranchFilter, setResponseBranchFilter] = useState("");
   const [responseStatusFilter, setResponseStatusFilter] = useState("");
   const [responseTeamLead, setResponseTeamLead] = useState("");
-  const [responseDateFrom, setResponseDateFrom] = useState(todayActivityDate);
-  const [responseDateTo, setResponseDateTo] = useState(todayActivityDate);
+  const [responseDateFrom, setResponseDateFrom] = useState("");
+  const [responseDateTo, setResponseDateTo] = useState("");
   const [selectedResponseIds, setSelectedResponseIds] = useState<string[]>([]);
 
   const [userCreateState, userCreateAction, userCreatePending] = useActionState(
@@ -416,16 +415,14 @@ export function AdminDashboard({
   }, [responseBranchFilter, responseDateFrom, responseDateTo, responseNameFilter, responseStatusFilter, responseTeamLead, responses]);
 
   const responseBranchOptions = useMemo(() => {
-    return Array.from(
-      new Set(filteredResponseRows.map((item) => item.branchName.trim()).filter(Boolean)),
-    ).sort();
-  }, [filteredResponseRows]);
+    return campuses.map((campus) => campus.name).filter(Boolean).sort();
+  }, [campuses]);
 
   const responseStatusOptions = useMemo(() => {
     return Array.from(
-      new Set(filteredResponseRows.map((item) => item.status.trim()).filter(Boolean)),
+      new Set([...responses.map((item) => item.status.trim()).filter(Boolean), "pending"]),
     ).sort();
-  }, [filteredResponseRows]);
+  }, [responses]);
 
   const visibleResponseIds = useMemo(
     () => filteredResponseRows.map((item) => item.id),
@@ -446,8 +443,8 @@ export function AdminDashboard({
     setResponseBranchFilter("");
     setResponseStatusFilter("");
     setResponseTeamLead("");
-    setResponseDateFrom(todayActivityDate);
-    setResponseDateTo(todayActivityDate);
+    setResponseDateFrom("");
+    setResponseDateTo("");
   };
 
   useEffect(() => {
@@ -1387,5 +1384,3 @@ function EditModal({
     </div>
   );
 }
-
-
