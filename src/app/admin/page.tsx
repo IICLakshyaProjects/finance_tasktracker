@@ -53,6 +53,7 @@ export default async function AdminPage() {
       accountReceivables={accountReceivables}
       responses={responses.map((response) => ({
         id: response.id,
+        agentUsername: response.agentUsername,
         name: response.name,
         status: response.status,
         branchId: response.branchId,

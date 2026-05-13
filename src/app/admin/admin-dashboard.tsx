@@ -4,7 +4,6 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 
 import { logoutAction } from "../actions";
 import {
-  getActivityDateString,
   getAllowedActivityDateBounds,
   type ActivityDateSettings,
 } from "@/lib/activity-date";
@@ -18,7 +17,6 @@ import {
   deleteBranchRelatedAction,
   deleteCampusAction,
   deleteTeamLeadAction,
-  deleteResponsesAction,
   deleteUserAction,
   updateActivityDateSettingsAction,
   updateAccountReceivablesAction,
@@ -50,6 +48,7 @@ type AccountReceivableRecord = {
 
 type ResponseRecord = {
   id: string;
+  agentUsername: string;
   name: string;
   status: string;
   branchId: string;
@@ -65,6 +64,10 @@ type ResponseRecord = {
   totalTimeTakenMinutes: number;
   remark: string;
   createdAt: string;
+};
+
+type ResponseTableRow = ResponseRecord & {
+  isPending?: boolean;
 };
 
 type UserRecord = {
@@ -175,7 +178,11 @@ function escapeCsv(value: string) {
   return value;
 }
 
-function downloadResponsesCsv(rows: ResponseRecord[], filename: string) {
+function normalizeIdentity(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function downloadResponsesCsv(rows: ResponseTableRow[], filename: string) {
   const header = [
     "Name",
     "Status",
@@ -314,7 +321,6 @@ export function AdminDashboard({
   responses,
   activityDateSettings,
 }: AdminDashboardProps) {
-  const todayActivityDate = getActivityDateString(0);
   const { min: activityDateMin, max: activityDateMax } = getAllowedActivityDateBounds(
     activityDateSettings,
   );
@@ -325,9 +331,8 @@ export function AdminDashboard({
   const [responseBranchFilter, setResponseBranchFilter] = useState("");
   const [responseStatusFilter, setResponseStatusFilter] = useState("");
   const [responseTeamLead, setResponseTeamLead] = useState("");
-  const [responseDateFrom, setResponseDateFrom] = useState(todayActivityDate);
-  const [responseDateTo, setResponseDateTo] = useState(todayActivityDate);
-  const [selectedResponseIds, setSelectedResponseIds] = useState<string[]>([]);
+  const [responseDateFrom, setResponseDateFrom] = useState("");
+  const [responseDateTo, setResponseDateTo] = useState("");
 
   const [userCreateState, userCreateAction, userCreatePending] = useActionState(
     createUserAction,
@@ -370,11 +375,6 @@ export function AdminDashboard({
     updateActivityDateSettingsAction,
     emptyState,
   );
-  const [responseDeleteState, responseDeleteAction, responseDeletePending] = useActionState(
-    deleteResponsesAction,
-    emptyState,
-  );
-
   const userMessageRef = useRef(userCreateState.message);
   const userEditMessageRef = useRef(userEditState.message);
   const branchMessageRef = useRef(branchCreateState.message);
@@ -387,13 +387,63 @@ export function AdminDashboard({
   const accountEditMessageRef = useRef(accountEditState.message);
   const activityDateMessageRef = useRef(activityDateState.message);
 
-  const filteredResponseRows = useMemo(() => {
+  const pendingResponseRows = useMemo<ResponseTableRow[]>(() => {
     const from = responseDateFrom.trim();
     const to = responseDateTo.trim();
     const lowerBound = from && to ? (from <= to ? from : to) : from || to;
     const upperBound = from && to ? (from <= to ? to : from) : to || from;
 
-    return responses.filter((item) => {
+    const responsesInSelectedRange = responses.filter((item) => {
+      return !lowerBound || !upperBound
+        ? true
+        : item.responseDate >= lowerBound && item.responseDate <= upperBound;
+    });
+
+    const respondedIdentities = new Set(
+      responsesInSelectedRange.flatMap((item) =>
+        [normalizeIdentity(item.agentUsername), normalizeIdentity(item.name)].filter(Boolean),
+      ),
+    );
+
+    return users
+      .filter((user) => {
+        const userIdentities = [
+          normalizeIdentity(user.username),
+          normalizeIdentity(user.email),
+          normalizeIdentity(user.name ?? ""),
+        ].filter(Boolean);
+
+        return !userIdentities.some((identity) => respondedIdentities.has(identity));
+      })
+      .map((user) => ({
+        id: `pending-${user.id}`,
+        agentUsername: user.username,
+        name: user.name || user.username || "—",
+        status: "pending",
+        branchId: user.campusId || "",
+        branchName: user.campusName || "—",
+        teamLeadName: "—",
+        responseDate: "",
+        category: "",
+        categoryLabel: "—",
+        categoryValueId: "",
+        categoryValueName: "—",
+        totalCount: 0,
+        totalTimeTakenHours: 0,
+        totalTimeTakenMinutes: 0,
+        remark: "",
+        createdAt: "",
+        isPending: true,
+      }));
+  }, [responseDateFrom, responseDateTo, responses, users]);
+
+  const filteredResponseRows = useMemo<ResponseTableRow[]>(() => {
+    const from = responseDateFrom.trim();
+    const to = responseDateTo.trim();
+    const lowerBound = from && to ? (from <= to ? from : to) : from || to;
+    const upperBound = from && to ? (from <= to ? to : from) : to || from;
+
+    const responseRows = responses.filter((item) => {
       const dateMatch =
         !lowerBound || !upperBound
           ? true
@@ -413,41 +463,53 @@ export function AdminDashboard({
 
       return dateMatch && nameMatch && branchMatch && statusMatch && teamLeadMatch;
     });
-  }, [responseBranchFilter, responseDateFrom, responseDateTo, responseNameFilter, responseStatusFilter, responseTeamLead, responses]);
+
+    const pendingRows = pendingResponseRows.filter((item) => {
+      const nameMatch = responseNameFilter
+        ? item.name.toLowerCase().includes(responseNameFilter.toLowerCase())
+        : true;
+      const branchMatch = responseBranchFilter
+        ? item.branchName.toLowerCase() === responseBranchFilter.toLowerCase()
+        : true;
+      const statusMatch = responseStatusFilter
+        ? item.status.toLowerCase() === responseStatusFilter.toLowerCase()
+        : true;
+      const teamLeadMatch = responseTeamLead
+        ? item.teamLeadName.toLowerCase().includes(responseTeamLead.toLowerCase())
+        : true;
+
+      return nameMatch && branchMatch && statusMatch && teamLeadMatch;
+    });
+
+    return [...responseRows, ...pendingRows];
+  }, [
+    pendingResponseRows,
+    responseBranchFilter,
+    responseDateFrom,
+    responseDateTo,
+    responseNameFilter,
+    responseStatusFilter,
+    responseTeamLead,
+    responses,
+  ]);
 
   const responseBranchOptions = useMemo(() => {
-    return Array.from(
-      new Set(filteredResponseRows.map((item) => item.branchName.trim()).filter(Boolean)),
-    ).sort();
-  }, [filteredResponseRows]);
+    return campuses.map((campus) => campus.name).filter(Boolean).sort();
+  }, [campuses]);
 
   const responseStatusOptions = useMemo(() => {
     return Array.from(
-      new Set(filteredResponseRows.map((item) => item.status.trim()).filter(Boolean)),
+      new Set([...responses.map((item) => item.status.trim()).filter(Boolean), "pending"]),
     ).sort();
-  }, [filteredResponseRows]);
-
-  const visibleResponseIds = useMemo(
-    () => filteredResponseRows.map((item) => item.id),
-    [filteredResponseRows],
-  );
-
-  const selectedResponses = useMemo(
-    () => responses.filter((item) => selectedResponseIds.includes(item.id)),
-    [responses, selectedResponseIds],
-  );
-
-  const allFilteredSelected =
-    visibleResponseIds.length > 0 &&
-    visibleResponseIds.every((item) => selectedResponseIds.includes(item));
+  }, [responses]);
 
   const resetResponseFilters = () => {
     setResponseNameFilter("");
     setResponseBranchFilter("");
     setResponseStatusFilter("");
     setResponseTeamLead("");
-    setResponseDateFrom(todayActivityDate);
-    setResponseDateTo(todayActivityDate);
+    setResponseDateFrom("");
+    setResponseDateTo("");
   };
 
   useEffect(() => {
@@ -1068,14 +1130,6 @@ export function AdminDashboard({
                     </button>
                     <button
                       type="button"
-                      onClick={() => downloadResponsesCsv(selectedResponses, "selected-responses.csv")}
-                      disabled={!selectedResponses.length}
-                      className="rounded-full border border-sky-200 bg-white px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Download selected
-                    </button>
-                    <button
-                      type="button"
                       onClick={() =>
                         downloadResponsesCsv(filteredResponseRows, `responses-${responseDateFrom || "start"}-${responseDateTo || "end"}.csv`)
                       }
@@ -1084,30 +1138,6 @@ export function AdminDashboard({
                     >
                       Bulk download
                     </button>
-                    <form action={responseDeleteAction}>
-                      {selectedResponseIds.map((id) => (
-                        <input key={id} type="hidden" name="ids" value={id} />
-                      ))}
-                      <button
-                        type="submit"
-                        disabled={!selectedResponseIds.length || responseDeletePending}
-                        className="rounded-full border border-rose-200 bg-white px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {responseDeletePending ? "Deleting..." : "Delete selected"}
-                      </button>
-                    </form>
-                    <form action={responseDeleteAction}>
-                      {visibleResponseIds.map((id) => (
-                        <input key={id} type="hidden" name="ids" value={id} />
-                      ))}
-                      <button
-                        type="submit"
-                        disabled={!visibleResponseIds.length || responseDeletePending}
-                        className="rounded-full border border-rose-200 bg-white px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {responseDeletePending ? "Deleting..." : "Bulk delete"}
-                      </button>
-                    </form>
                   </div>
                 </div>
 
@@ -1177,24 +1207,6 @@ export function AdminDashboard({
                   <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-slate-50">
                       <tr className="text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                        <th className="px-4 py-3">
-                          <input
-                            type="checkbox"
-                            checked={allFilteredSelected}
-                            disabled={!visibleResponseIds.length}
-                            onChange={(event) => {
-                              const nextChecked = event.target.checked;
-                              setSelectedResponseIds((current) => {
-                                if (nextChecked) {
-                                  return Array.from(new Set([...current, ...visibleResponseIds]));
-                                }
-
-                                return current.filter((id) => !visibleResponseIds.includes(id));
-                              });
-                            }}
-                            className="h-4 w-4 rounded border-slate-300 text-sky-500 focus:ring-sky-400"
-                          />
-                        </th>
                         <th className="px-4 py-3">Name</th>
                         <th className="px-4 py-3">Status</th>
                         <th className="px-4 py-3">Branch</th>
@@ -1212,21 +1224,6 @@ export function AdminDashboard({
                       {filteredResponseRows.length ? (
                         filteredResponseRows.map((item) => (
                           <tr key={item.id} className="align-top">
-                            <td className="px-4 py-4">
-                              <input
-                                type="checkbox"
-                                checked={selectedResponseIds.includes(item.id)}
-                                onChange={(event) => {
-                                  const nextChecked = event.target.checked;
-                                  setSelectedResponseIds((current) =>
-                                    nextChecked
-                                      ? Array.from(new Set([...current, item.id]))
-                                      : current.filter((id) => id !== item.id),
-                                  );
-                                }}
-                                className="h-4 w-4 rounded border-slate-300 text-sky-500 focus:ring-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
-                              />
-                            </td>
                             <td className="px-4 py-4">
                               <p className="font-medium text-slate-950">{item.name || "—"}</p>
                             </td>
@@ -1252,9 +1249,9 @@ export function AdminDashboard({
                             </td>
                           </tr>
                         ))
-                        ) : (
+                      ) : (
                         <tr>
-                          <td className="px-4 py-8 text-sm text-slate-500" colSpan={12}>
+                          <td className="px-4 py-8 text-sm text-slate-500" colSpan={11}>
                             No responses match the current filters.
                           </td>
                         </tr>
@@ -1263,7 +1260,6 @@ export function AdminDashboard({
                   </table>
                 </div>
               </div>
-              <InlineStatus state={responseDeleteState} />
             </SectionCard>
           ) : null}
 
@@ -1387,5 +1383,3 @@ function EditModal({
     </div>
   );
 }
-
-
