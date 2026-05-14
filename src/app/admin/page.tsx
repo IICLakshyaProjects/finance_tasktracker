@@ -65,6 +65,7 @@ export default async function AdminPage() {
         categoryValueId: response.categoryValueId,
         categoryValueName: response.categoryValueName,
         totalCount: response.totalCount,
+        totalTimeTaken: response.totalTimeTaken,
         totalTimeTakenHours: response.totalTimeTakenHours,
         totalTimeTakenMinutes: response.totalTimeTakenMinutes,
         remark: response.remark,
