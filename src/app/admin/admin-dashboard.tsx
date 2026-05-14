@@ -60,6 +60,7 @@ type ResponseRecord = {
   categoryValueId: string;
   categoryValueName: string;
   totalCount: number;
+  totalTimeTaken: string;
   totalTimeTakenHours: number;
   totalTimeTakenMinutes: number;
   remark: string;
@@ -152,6 +153,27 @@ function formatDuration(hours: number, minutes: number) {
   return `${normalizedHours}:${String(normalizedMinutes).padStart(2, "0")}`;
 }
 
+function formatTotalTimeTaken(item: Pick<ResponseRecord, "totalTimeTaken" | "totalTimeTakenHours" | "totalTimeTakenMinutes">) {
+  const storedValue = item.totalTimeTaken.trim();
+
+  if (storedValue) {
+    const normalized = storedValue.match(/^(\d+)\s*:\s*(\d{1,2})$/);
+
+    if (normalized) {
+      const hours = Number.parseInt(normalized[1], 10);
+      const minutes = Number.parseInt(normalized[2], 10);
+
+      if (Number.isInteger(hours) && Number.isInteger(minutes)) {
+        return `${hours}:${String(minutes).padStart(2, "0")}`;
+      }
+    }
+
+    return storedValue;
+  }
+
+  return formatDuration(item.totalTimeTakenHours, item.totalTimeTakenMinutes);
+}
+
 function responseStatusTone(status: string) {
   const normalized = status.toLowerCase();
 
@@ -207,7 +229,7 @@ function downloadResponsesCsv(rows: ResponseTableRow[], filename: string) {
       item.categoryLabel,
       item.categoryValueName,
       String(item.totalCount),
-      formatDuration(item.totalTimeTakenHours, item.totalTimeTakenMinutes),
+      formatTotalTimeTaken(item),
       item.remark,
       item.createdAt ? formatDateTime(String(item.createdAt)) : "—",
     ]
@@ -429,6 +451,7 @@ export function AdminDashboard({
         categoryValueId: "",
         categoryValueName: "—",
         totalCount: 0,
+        totalTimeTaken: "0:00",
         totalTimeTakenHours: 0,
         totalTimeTakenMinutes: 0,
         remark: "",
@@ -1239,7 +1262,7 @@ export function AdminDashboard({
                             <td className="px-4 py-4 text-sm text-slate-700">{item.categoryValueName || "—"}</td>
                             <td className="px-4 py-4 text-sm font-medium text-slate-700">{item.totalCount}</td>
                             <td className="px-4 py-4 text-sm text-slate-700">
-                              {formatDuration(item.totalTimeTakenHours, item.totalTimeTakenMinutes)}
+                              {formatTotalTimeTaken(item)}
                             </td>
                             <td className="px-4 py-4 text-sm leading-6 text-slate-700 whitespace-pre-wrap break-words">
                               {item.remark || "—"}
