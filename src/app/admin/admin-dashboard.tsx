@@ -204,6 +204,38 @@ function normalizeIdentity(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? "";
 }
 
+const excludedResponseUsers = new Set(
+  [
+    "sudeesh.s@iiclakshya.com",
+    "siddarth@iiclakshya.com",
+    "alvinjose@iiclakshya.com",
+  ].map((value) => value.trim().toLowerCase()),
+);
+
+function getDatesInRange(from: string, to: string) {
+  if (!from && !to) {
+    return [] as string[];
+  }
+
+  const start = from && to ? (from <= to ? from : to) : from || to;
+  const end = from && to ? (from <= to ? to : from) : to || from;
+
+  if (!start || !end) {
+    return [] as string[];
+  }
+
+  const dates: string[] = [];
+  const current = new Date(`${start}T00:00:00.000Z`);
+  const final = new Date(`${end}T00:00:00.000Z`);
+
+  while (current <= final) {
+    dates.push(current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+
+  return dates;
+}
+
 function downloadResponsesCsv(rows: ResponseTableRow[], filename: string) {
   const header = [
     "Name",
@@ -414,6 +446,7 @@ export function AdminDashboard({
     const to = responseDateTo.trim();
     const lowerBound = from && to ? (from <= to ? from : to) : from || to;
     const upperBound = from && to ? (from <= to ? to : from) : to || from;
+    const selectedDates = getDatesInRange(from, to);
 
     const responsesInSelectedRange = responses.filter((item) => {
       return !lowerBound || !upperBound
@@ -427,7 +460,52 @@ export function AdminDashboard({
       ),
     );
 
+    if (selectedDates.length) {
+      return selectedDates.flatMap((date) => {
+        const responsesOnDate = responses.filter((item) => item.responseDate === date);
+        const respondedIdentitiesOnDate = new Set(
+          responsesOnDate.flatMap((item) =>
+            [normalizeIdentity(item.agentUsername), normalizeIdentity(item.name)].filter(Boolean),
+          ),
+        );
+
+        return users
+          .filter((user) => {
+            const userIdentities = [
+              normalizeIdentity(user.username),
+              normalizeIdentity(user.email),
+              normalizeIdentity(user.name ?? ""),
+            ].filter(Boolean);
+
+            return !userIdentities.some((identity) => respondedIdentitiesOnDate.has(identity));
+          })
+          .map((user) => ({
+            id: `pending-${user.id}-${date}`,
+            agentUsername: user.username,
+            name: user.name || user.username || "—",
+            status: "pending",
+            branchId: user.campusId || "",
+            branchName: user.campusName || "—",
+            teamLeadName: "—",
+            responseDate: date,
+            category: "",
+            categoryLabel: "—",
+            categoryValueId: "",
+            categoryValueName: "—",
+            totalCount: 0,
+            totalTimeTaken: "0:00",
+            totalTimeTakenHours: 0,
+            totalTimeTakenMinutes: 0,
+            remark: "",
+            createdAt: "",
+            isPending: true,
+          }));
+      });
+    }
+
     return users
+      .filter((user) => user.role.trim().toUpperCase() !== "ADMIN")
+      .filter((user) => !excludedResponseUsers.has(normalizeIdentity(user.email)))
       .filter((user) => {
         const userIdentities = [
           normalizeIdentity(user.username),
@@ -467,6 +545,28 @@ export function AdminDashboard({
     const upperBound = from && to ? (from <= to ? to : from) : to || from;
 
     const responseRows = responses.filter((item) => {
+      const excludedUser = excludedResponseUsers.has(normalizeIdentity(item.agentUsername));
+      const dateMatch =
+        !lowerBound || !upperBound
+          ? true
+          : item.responseDate >= lowerBound && item.responseDate <= upperBound;
+      const nameMatch = responseNameFilter
+        ? item.name.toLowerCase().includes(responseNameFilter.toLowerCase())
+        : true;
+      const branchMatch = responseBranchFilter
+        ? item.branchName.toLowerCase() === responseBranchFilter.toLowerCase()
+        : true;
+      const statusMatch = responseStatusFilter
+        ? item.status.toLowerCase() === responseStatusFilter.toLowerCase()
+        : true;
+      const teamLeadMatch = responseTeamLead
+        ? item.teamLeadName.toLowerCase().includes(responseTeamLead.toLowerCase())
+        : true;
+
+      return !excludedUser && dateMatch && nameMatch && branchMatch && statusMatch && teamLeadMatch;
+    });
+
+    const pendingRows = pendingResponseRows.filter((item) => {
       const dateMatch =
         !lowerBound || !upperBound
           ? true
@@ -485,23 +585,6 @@ export function AdminDashboard({
         : true;
 
       return dateMatch && nameMatch && branchMatch && statusMatch && teamLeadMatch;
-    });
-
-    const pendingRows = pendingResponseRows.filter((item) => {
-      const nameMatch = responseNameFilter
-        ? item.name.toLowerCase().includes(responseNameFilter.toLowerCase())
-        : true;
-      const branchMatch = responseBranchFilter
-        ? item.branchName.toLowerCase() === responseBranchFilter.toLowerCase()
-        : true;
-      const statusMatch = responseStatusFilter
-        ? item.status.toLowerCase() === responseStatusFilter.toLowerCase()
-        : true;
-      const teamLeadMatch = responseTeamLead
-        ? item.teamLeadName.toLowerCase().includes(responseTeamLead.toLowerCase())
-        : true;
-
-      return nameMatch && branchMatch && statusMatch && teamLeadMatch;
     });
 
     return [...responseRows, ...pendingRows];
