@@ -263,6 +263,24 @@ function formatDuration(hours: number, minutes: number) {
   return `${finalHours}:${String(finalMinutes).padStart(2, "0")}`;
 }
 
+function normalizeResponseMetrics<T extends Pick<ResponseRecord, "status" | "totalCount" | "totalTimeTaken" | "totalTimeTakenHours" | "totalTimeTakenMinutes">>(
+  response: T,
+) {
+  const normalizedStatus = response.status.trim().toLowerCase();
+
+  if (normalizedStatus === "working") {
+    return response;
+  }
+
+  return {
+    ...response,
+    totalCount: 0,
+    totalTimeTaken: "0:00",
+    totalTimeTakenHours: 0,
+    totalTimeTakenMinutes: 0,
+  };
+}
+
 export type BranchRelatedRecord = {
   id: string;
   name: string;
@@ -405,7 +423,7 @@ export async function listResponses(): Promise<ResponseRecord[]> {
     `,
   );
 
-  return result.rows;
+  return result.rows.map((response) => normalizeResponseMetrics(response));
 }
 
 export async function deleteResponses(ids: string[]): Promise<number> {
@@ -1061,7 +1079,7 @@ export async function createResponse(input: {
     ],
   );
 
-  return result.rows[0] ?? {
+  const fallback = {
     id,
     name: input.name,
     status: input.status,
@@ -1080,6 +1098,8 @@ export async function createResponse(input: {
     remark: input.remark,
     createdAt: new Date(),
   };
+
+  return normalizeResponseMetrics(result.rows[0] ?? fallback);
 }
 
 export async function updateUserPassword(input: {
