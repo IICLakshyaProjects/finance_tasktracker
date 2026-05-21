@@ -209,7 +209,6 @@ const excludedResponseIdentities = new Set(
     "sudeesh.s@iiclakshya.com",
     "siddarth@iiclakshya.com",
     "alvinjose@iiclakshya.com",
-    "Alvin Jose",
     "Siddarth P",
     "Sudeesh S",
   ].map((value) => normalizeIdentity(value)),
