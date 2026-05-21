@@ -274,7 +274,7 @@ function normalizeResponseMetrics<T extends Pick<ResponseRecord, "status" | "tot
 
   return {
     ...response,
-    totalCount: 0,
+    totalCount: 1,
     totalTimeTaken: "0:00",
     totalTimeTakenHours: 0,
     totalTimeTakenMinutes: 0,
