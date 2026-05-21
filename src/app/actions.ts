@@ -60,6 +60,16 @@ function normalizeResponseStatus(value: string): ResponseStatus | null {
   return null;
 }
 
+function normalizeNonWorkingResponse(status: Exclude<ResponseStatus, "working">) {
+  return {
+    category: status,
+    categoryLabel: status === "leave" ? "Leave" : "Weekoff",
+    categoryValueId: "",
+    categoryValueName: "",
+    totalCount: 1,
+  };
+}
+
 function parseResponseRows(raw: string): ResponseRowInput[] | null {
   if (!raw) {
     return [];
@@ -215,6 +225,8 @@ export async function createResponseAction(
   }
 
   if (status !== "working") {
+    const normalizedResponse = normalizeNonWorkingResponse(status);
+
     await createResponse({
       name,
       status,
@@ -222,11 +234,11 @@ export async function createResponseAction(
       branchName: branch.name,
       teamLeadName,
       responseDate,
-      category: status,
-      categoryLabel: status === "leave" ? "Leave" : "Weekoff",
-      categoryValueId: "",
-      categoryValueName: "",
-      totalCount: 0,
+      category: normalizedResponse.category,
+      categoryLabel: normalizedResponse.categoryLabel,
+      categoryValueId: normalizedResponse.categoryValueId,
+      categoryValueName: normalizedResponse.categoryValueName,
+      totalCount: normalizedResponse.totalCount,
       totalTimeTakenHours: 0,
       totalTimeTakenMinutes: 0,
       remark: "",

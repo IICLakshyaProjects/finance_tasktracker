@@ -204,13 +204,36 @@ function normalizeIdentity(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? "";
 }
 
-const excludedResponseUsers = new Set(
+const excludedResponseIdentities = new Set(
   [
     "sudeesh.s@iiclakshya.com",
     "siddarth@iiclakshya.com",
     "alvinjose@iiclakshya.com",
-  ].map((value) => value.trim().toLowerCase()),
+    "Alvin Jose",
+    "Siddarth P",
+    "Sudeesh S",
+  ].map((value) => normalizeIdentity(value)),
 );
+
+function isExcludedResponseIdentity(...values: Array<string | null | undefined>) {
+  return values.map(normalizeIdentity).some((value) => excludedResponseIdentities.has(value));
+}
+
+function normalizeResponseRowForDisplay(item: ResponseTableRow): ResponseTableRow {
+  const normalizedStatus = item.status.trim().toLowerCase();
+
+  if (normalizedStatus === "working") {
+    return item;
+  }
+
+  return {
+    ...item,
+    totalCount: 1,
+    totalTimeTaken: "0:00",
+    totalTimeTakenHours: 0,
+    totalTimeTakenMinutes: 0,
+  };
+}
 
 function getDatesInRange(from: string, to: string) {
   if (!from && !to) {
@@ -251,8 +274,10 @@ function downloadResponsesCsv(rows: ResponseTableRow[], filename: string) {
     "Created",
   ];
 
-  const lines = rows.map((item) =>
-    [
+  const lines = rows.map((row) => {
+    const item = normalizeResponseRowForDisplay(row);
+
+    return [
       item.name,
       item.status,
       item.branchName,
@@ -266,8 +291,8 @@ function downloadResponsesCsv(rows: ResponseTableRow[], filename: string) {
       item.createdAt ? formatDateTime(String(item.createdAt)) : "—",
     ]
       .map((value) => escapeCsv(value))
-      .join(","),
-  );
+      .join(",");
+  });
 
   const blob = new Blob([`${header.join(",")}\n${lines.join("\n")}`], {
     type: "text/csv;charset=utf-8;",
@@ -448,11 +473,9 @@ export function AdminDashboard({
     const upperBound = from && to ? (from <= to ? to : from) : to || from;
     const selectedDates = getDatesInRange(from, to);
 
-    const responsesInSelectedRange = responses.filter((item) => {
-      return !lowerBound || !upperBound
-        ? true
-        : item.responseDate >= lowerBound && item.responseDate <= upperBound;
-    });
+    const responsesInSelectedRange = responses.filter((item) =>
+      !lowerBound || !upperBound ? true : item.responseDate >= lowerBound && item.responseDate <= upperBound,
+    );
 
     const respondedIdentities = new Set(
       responsesInSelectedRange.flatMap((item) =>
@@ -471,13 +494,14 @@ export function AdminDashboard({
 
         return users
           .filter((user) => {
-            const userIdentities = [
-              normalizeIdentity(user.username),
-              normalizeIdentity(user.email),
-              normalizeIdentity(user.name ?? ""),
-            ].filter(Boolean);
+            const userIdentities = [user.username, user.email, user.name ?? ""];
 
-            return !userIdentities.some((identity) => respondedIdentitiesOnDate.has(identity));
+            return (
+              !isExcludedResponseIdentity(user.username, user.email, user.name) &&
+              !userIdentities.some((identity) =>
+                respondedIdentitiesOnDate.has(normalizeIdentity(identity)),
+              )
+            );
           })
           .map((user) => ({
             id: `pending-${user.id}-${date}`,
@@ -488,11 +512,11 @@ export function AdminDashboard({
             branchName: user.campusName || "—",
             teamLeadName: "—",
             responseDate: date,
-            category: "",
-            categoryLabel: "—",
+            category: "pending",
+            categoryLabel: "Pending",
             categoryValueId: "",
             categoryValueName: "—",
-            totalCount: 0,
+            totalCount: 1,
             totalTimeTaken: "0:00",
             totalTimeTakenHours: 0,
             totalTimeTakenMinutes: 0,
@@ -505,15 +529,11 @@ export function AdminDashboard({
 
     return users
       .filter((user) => user.role.trim().toUpperCase() !== "ADMIN")
-      .filter((user) => !excludedResponseUsers.has(normalizeIdentity(user.email)))
+      .filter((user) => !isExcludedResponseIdentity(user.username, user.email, user.name))
       .filter((user) => {
-        const userIdentities = [
-          normalizeIdentity(user.username),
-          normalizeIdentity(user.email),
-          normalizeIdentity(user.name ?? ""),
-        ].filter(Boolean);
+        const userIdentities = [user.username, user.email, user.name ?? ""];
 
-        return !userIdentities.some((identity) => respondedIdentities.has(identity));
+        return !userIdentities.some((identity) => respondedIdentities.has(normalizeIdentity(identity)));
       })
       .map((user) => ({
         id: `pending-${user.id}`,
@@ -524,11 +544,11 @@ export function AdminDashboard({
         branchName: user.campusName || "—",
         teamLeadName: "—",
         responseDate: "",
-        category: "",
-        categoryLabel: "—",
+        category: "pending",
+        categoryLabel: "Pending",
         categoryValueId: "",
         categoryValueName: "—",
-        totalCount: 0,
+        totalCount: 1,
         totalTimeTaken: "0:00",
         totalTimeTakenHours: 0,
         totalTimeTakenMinutes: 0,
@@ -545,7 +565,7 @@ export function AdminDashboard({
     const upperBound = from && to ? (from <= to ? to : from) : to || from;
 
     const responseRows = responses.filter((item) => {
-      const excludedUser = excludedResponseUsers.has(normalizeIdentity(item.agentUsername));
+      const excludedUser = isExcludedResponseIdentity(item.agentUsername, item.name);
       const dateMatch =
         !lowerBound || !upperBound
           ? true
@@ -564,7 +584,7 @@ export function AdminDashboard({
         : true;
 
       return !excludedUser && dateMatch && nameMatch && branchMatch && statusMatch && teamLeadMatch;
-    });
+    }).map(normalizeResponseRowForDisplay);
 
     const pendingRows = pendingResponseRows.filter((item) => {
       const dateMatch =
@@ -585,7 +605,7 @@ export function AdminDashboard({
         : true;
 
       return dateMatch && nameMatch && branchMatch && statusMatch && teamLeadMatch;
-    });
+    }).map(normalizeResponseRowForDisplay);
 
     return [...responseRows, ...pendingRows];
   }, [
