@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 
+import Link from "next/link";
 import { logoutAction } from "../actions";
 import {
   getAllowedActivityDateBounds,
@@ -770,6 +771,12 @@ export function AdminDashboard({
               </button>
             </form>
           </div>
+          <Link
+            href="/dashboard"
+            className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+          >
+            Open report dashboard
+          </Link>
           <div className="mt-6 space-y-3">
             {tabs.map((tab) => {
               const active = tab.key === activeTab;
