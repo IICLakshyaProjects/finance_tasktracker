@@ -321,6 +321,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
   const [dateTo, setDateTo] = useState(today);
   const [accountReceivableFilter, setAccountReceivableFilter] = useState("");
   const [branchRelatedFilter, setBranchRelatedFilter] = useState("");
+  const [branchNameFilter, setBranchNameFilter] = useState("");
   const dashboardRef = useRef<HTMLDivElement>(null);
 
   const responseRows = useMemo(() => normalizeResponseRows(responses), [responses]);
@@ -369,8 +370,22 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
   );
 
   const filteredRows = useMemo(
-    () => [...categoryFilteredResponses, ...pendingRows],
-    [categoryFilteredResponses, pendingRows],
+    () => {
+      const rows = [...categoryFilteredResponses, ...pendingRows];
+
+      return branchNameFilter
+        ? rows.filter((row) => row.branchName === branchNameFilter)
+        : rows;
+    },
+    [branchNameFilter, categoryFilteredResponses, pendingRows],
+  );
+
+  const branchNameOptions = useMemo(
+    () =>
+      Array.from(new Set([...dateFilteredResponses, ...pendingRows].map((row) => row.branchName))).sort(
+        (left, right) => left.localeCompare(right),
+      ),
+    [dateFilteredResponses, pendingRows],
   );
 
   const accountReceivableOptions = useMemo(() => {
@@ -537,6 +552,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                       setDateTo(today);
                       setAccountReceivableFilter("");
                       setBranchRelatedFilter("");
+                      setBranchNameFilter("");
                     }}
                     className="text-xs font-semibold text-sky-700"
                   >
@@ -580,6 +596,24 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                   ))}
                 </select>
               </div>
+
+              <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 print:hidden">
+                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Row labels
+                </label>
+                <select
+                  value={branchNameFilter}
+                  onChange={(event) => setBranchNameFilter(event.target.value)}
+                  className="bg-transparent text-sm text-slate-900 outline-none"
+                >
+                  <option value="">All</option>
+                  {branchNameOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -592,7 +626,23 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                 Grand Total: {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
               </div>
             </div>
-            <table className="min-w-[960px] w-full border-collapse text-sm leading-tight">
+            <table className="min-w-[960px] w-full table-fixed border-collapse text-sm leading-tight">
+              <colgroup>
+                <col className="w-[220px]" />
+                {columns.map((column) => (
+                  <col
+                    key={`width-${column}`}
+                    className={
+                      column === "Account Receivable related"
+                        ? "w-[135px]"
+                        : column === "Branch related"
+                          ? "w-[110px]"
+                          : "w-[130px]"
+                    }
+                  />
+                ))}
+                <col className="w-[120px]" />
+              </colgroup>
               <thead>
                 <tr className="bg-sky-100">
                   <th
