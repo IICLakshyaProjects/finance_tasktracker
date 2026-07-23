@@ -86,6 +86,18 @@ const COLUMN_ORDER = [
   "Weekoff",
 ];
 
+const SECTION_COLUMNS = new Set(["Account Receivable related", "Branch related"]);
+
+function getActivityColumnKey(categoryLabel: string, activityName: string) {
+  return `${categoryLabel}::${activityName}`;
+}
+
+function getColumnLabel(column: string) {
+  const separatorIndex = column.indexOf("::");
+
+  return separatorIndex === -1 ? column : column.slice(separatorIndex + 2);
+}
+
 function formatDuration(totalMinutes: number) {
   const normalized = Number.isFinite(totalMinutes) ? Math.max(0, Math.trunc(totalMinutes)) : 0;
   const hours = Math.floor(normalized / 60);
@@ -298,10 +310,26 @@ function buildGroups(rows: NormalizedReportRow[]) {
     const cellMinutes = row.isPending || row.status !== "working" ? 0 : row.totalMinutes;
 
     addCellValue(agent.cells, row.categoryLabel, cellCount, cellMinutes);
+    if (SECTION_COLUMNS.has(row.categoryLabel) && row.categoryValueName !== "-") {
+      addCellValue(
+        agent.cells,
+        getActivityColumnKey(row.categoryLabel, row.categoryValueName),
+        cellCount,
+        cellMinutes,
+      );
+    }
     agent.totalCount += cellCount;
     agent.totalMinutes += cellMinutes;
 
     addCellValue(branch.totals, row.categoryLabel, cellCount, cellMinutes);
+    if (SECTION_COLUMNS.has(row.categoryLabel) && row.categoryValueName !== "-") {
+      addCellValue(
+        branch.totals,
+        getActivityColumnKey(row.categoryLabel, row.categoryValueName),
+        cellCount,
+        cellMinutes,
+      );
+    }
     branch.totalCount += cellCount;
     branch.totalMinutes += cellMinutes;
   }
@@ -319,8 +347,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
   const today = getTodayInputValue();
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
-  const [accountReceivableFilter, setAccountReceivableFilter] = useState("");
-  const [branchRelatedFilter, setBranchRelatedFilter] = useState("");
+  const [sectionFilter, setSectionFilter] = useState("");
   const [branchNameFilter, setBranchNameFilter] = useState("");
   const dashboardRef = useRef<HTMLDivElement>(null);
 
@@ -348,22 +375,6 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     return filteredResponses;
   }, [dateFrom, dateTo, responseRows]);
 
-  const categoryFilteredResponses = useMemo(() => {
-    return dateFilteredResponses.filter((row) => {
-      if (row.categoryLabel === "Account Receivable related") {
-        return accountReceivableFilter
-          ? row.categoryValueName === accountReceivableFilter
-          : true;
-      }
-
-      if (row.categoryLabel === "Branch related") {
-        return branchRelatedFilter ? row.categoryValueName === branchRelatedFilter : true;
-      }
-
-      return true;
-    });
-  }, [accountReceivableFilter, branchRelatedFilter, dateFilteredResponses]);
-
   const pendingRows = useMemo(
     () => buildPendingRows(users, dateFilteredResponses),
     [dateFilteredResponses, users],
@@ -371,13 +382,13 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
 
   const filteredRows = useMemo(
     () => {
-      const rows = [...categoryFilteredResponses, ...pendingRows];
+      const rows = [...dateFilteredResponses, ...pendingRows];
 
       return branchNameFilter
         ? rows.filter((row) => row.branchName === branchNameFilter)
         : rows;
     },
-    [branchNameFilter, categoryFilteredResponses, pendingRows],
+    [branchNameFilter, dateFilteredResponses, pendingRows],
   );
 
   const branchNameOptions = useMemo(
@@ -388,39 +399,37 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     [dateFilteredResponses, pendingRows],
   );
 
-  const accountReceivableOptions = useMemo(() => {
-    return Array.from(
-      new Set(
-        dateFilteredResponses
-          .filter((row) => row.categoryLabel === "Account Receivable related")
-          .map((row) => row.categoryValueName)
-          .filter(Boolean),
-      ),
-    ).sort((left, right) => left.localeCompare(right));
-  }, [dateFilteredResponses]);
-
-  const branchRelatedOptions = useMemo(() => {
-    return Array.from(
-      new Set(
-        dateFilteredResponses
-          .filter((row) => row.categoryLabel === "Branch related")
-          .map((row) => row.categoryValueName)
-          .filter(Boolean),
-      ),
-    ).sort((left, right) => left.localeCompare(right));
-  }, [dateFilteredResponses]);
-
   const columns = useMemo(() => {
+    const visibleSections = sectionFilter ? [sectionFilter] : Array.from(SECTION_COLUMNS);
+    const sectionColumns = visibleSections.flatMap((section) => [
+      section,
+      ...(sectionFilter
+        ? Array.from(
+            new Set(
+              filteredRows
+                .filter((row) => row.categoryLabel === section)
+                .map((row) => row.categoryValueName)
+                .filter((value) => value && value !== "-"),
+            ),
+          )
+            .sort((left, right) => left.localeCompare(right))
+            .map((activityName) => getActivityColumnKey(section, activityName))
+        : []),
+    ]);
     const discovered = new Set<string>();
 
     for (const row of filteredRows) {
-      if (!COLUMN_ORDER.includes(row.categoryLabel)) {
+      if (!SECTION_COLUMNS.has(row.categoryLabel) && !COLUMN_ORDER.includes(row.categoryLabel)) {
         discovered.add(row.categoryLabel);
       }
     }
 
-    return [...COLUMN_ORDER, ...Array.from(discovered).sort((left, right) => left.localeCompare(right))];
-  }, [filteredRows]);
+    return [
+      ...sectionColumns,
+      ...COLUMN_ORDER.filter((column) => !SECTION_COLUMNS.has(column)),
+      ...Array.from(discovered).sort((left, right) => left.localeCompare(right)),
+    ];
+  }, [filteredRows, sectionFilter]);
 
   const groupedBranches = useMemo(() => buildGroups(filteredRows), [filteredRows]);
 
@@ -550,8 +559,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                     onClick={() => {
                       setDateFrom(today);
                       setDateTo(today);
-                      setAccountReceivableFilter("");
-                      setBranchRelatedFilter("");
+                      setSectionFilter("");
                       setBranchNameFilter("");
                     }}
                     className="text-xs font-semibold text-sky-700"
@@ -563,37 +571,16 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
 
               <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 print:hidden">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Account receivable
+                  Category
                 </label>
                 <select
-                  value={accountReceivableFilter}
-                  onChange={(event) => setAccountReceivableFilter(event.target.value)}
+                  value={sectionFilter}
+                  onChange={(event) => setSectionFilter(event.target.value)}
                   className="bg-transparent text-sm text-slate-900 outline-none"
                 >
                   <option value="">All</option>
-                  {accountReceivableOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 print:hidden">
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Branch related
-                </label>
-                <select
-                  value={branchRelatedFilter}
-                  onChange={(event) => setBranchRelatedFilter(event.target.value)}
-                  className="bg-transparent text-sm text-slate-900 outline-none"
-                >
-                  <option value="">All</option>
-                  {branchRelatedOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
+                  <option value="Account Receivable related">Account Receivable related</option>
+                  <option value="Branch related">Branch related</option>
                 </select>
               </div>
 
@@ -633,9 +620,9 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                   <col
                     key={`width-${column}`}
                     className={
-                      column === "Account Receivable related"
+                      getColumnLabel(column) === "Account Receivable related"
                         ? "w-[135px]"
-                        : column === "Branch related"
+                        : getColumnLabel(column) === "Branch related"
                           ? "w-[110px]"
                           : "w-[130px]"
                     }
@@ -666,7 +653,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                       key={column}
                       className="border border-slate-400 px-1.5 py-1 text-center font-bold text-slate-900"
                     >
-                      {column}
+                      {getColumnLabel(column)}
                     </th>
                   ))}
                   <th className="border border-slate-400 px-1.5 py-1 text-center font-bold text-slate-900">
