@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 
 type ResponseRecord = {
@@ -48,12 +48,14 @@ type NormalizedReportRow = {
   agentName: string;
   agentUsername: string;
   status: string;
+  category: string;
   categoryLabel: string;
   categoryValueName: string;
   totalCount: number;
   totalMinutes: number;
   totalTimeTaken: string;
   isPending: boolean;
+  isPlaceholder?: boolean;
 };
 
 type CellAggregate = {
@@ -86,6 +88,8 @@ const COLUMN_ORDER = [
   "Weekoff",
 ];
 
+const CATEGORY_ORDER = ["account-receivable", "branch-related", "leave", "weekoff", "pending"];
+
 function getColumnWidthClass(column: string) {
   if (column === "Leave") {
     return "w-[48px]";
@@ -108,6 +112,14 @@ function getColumnWidthClass(column: string) {
   }
 
   return "w-[72px]";
+}
+
+function formatDropdownLabel(value: string) {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function formatDuration(totalMinutes: number) {
@@ -196,6 +208,7 @@ function normalizeResponseRows(responses: ResponseRecord[]) {
         agentName: normalizeLabel(item.name || item.agentUsername, "-"),
         agentUsername: normalizeLabel(item.agentUsername, "-"),
         status,
+        category: normalizeLabel(item.category, "uncategorized").trim().toLowerCase(),
         categoryLabel,
         categoryValueName: normalizeLabel(item.categoryValueName, "-"),
         totalCount: Number.isFinite(item.totalCount) ? Math.max(0, Math.trunc(item.totalCount)) : 0,
@@ -225,12 +238,34 @@ function buildPendingRows(users: UserRecord[], responseRows: NormalizedReportRow
       agentName: normalizeLabel(user.name || user.username, "-"),
       agentUsername: normalizeLabel(user.username, "-"),
       status: "pending",
+      category: "pending",
       categoryLabel: "Pending",
       categoryValueName: "",
       totalCount: 1,
       totalMinutes: 0,
       totalTimeTaken: "",
       isPending: true,
+    }));
+}
+
+function buildEmployeeSeedRows(users: UserRecord[]) {
+  return users
+    .filter((user) => user.role.trim().toUpperCase() !== "ADMIN")
+    .filter((user) => !isExcludedResponseIdentity(user.username, user.email, user.name))
+    .map<NormalizedReportRow>((user) => ({
+      responseDate: "",
+      branchName: normalizeLabel(user.campusName, "Unassigned"),
+      agentName: normalizeLabel(user.name || user.username, "-"),
+      agentUsername: normalizeLabel(user.username, "-"),
+      status: "seed",
+      category: "seed",
+      categoryLabel: "Seed",
+      categoryValueName: "",
+      totalCount: 0,
+      totalMinutes: 0,
+      totalTimeTaken: "",
+      isPending: false,
+      isPlaceholder: true,
     }));
 }
 
@@ -318,6 +353,10 @@ function buildGroups(rows: NormalizedReportRow[]) {
       branch.agents.push(agent);
     }
 
+    if (row.isPlaceholder) {
+      continue;
+    }
+
     const cellCount = row.isPending || row.status !== "working" ? 1 : row.totalCount;
     const cellMinutes = row.isPending || row.status !== "working" ? 0 : row.totalMinutes;
 
@@ -343,9 +382,35 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
   const today = getTodayInputValue();
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [accountReceivableFilter, setAccountReceivableFilter] = useState("");
   const [branchRelatedFilter, setBranchRelatedFilter] = useState("");
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
+  const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
+  const branchDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent | TouchEvent) {
+      const target = event.target;
+
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (branchDropdownRef.current && !branchDropdownRef.current.contains(target)) {
+        setIsBranchDropdownOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, []);
 
   const responseRows = useMemo(() => normalizeResponseRows(responses), [responses]);
 
@@ -371,8 +436,40 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     return filteredResponses;
   }, [dateFrom, dateTo, responseRows]);
 
+  const branchOptions = useMemo(() => {
+    const discovered = new Set<string>();
+
+    for (const row of dateFilteredResponses) {
+      if (row.branchName) {
+        discovered.add(row.branchName);
+      }
+    }
+
+    for (const row of buildPendingRows(users, dateFilteredResponses)) {
+      if (row.branchName) {
+        discovered.add(row.branchName);
+      }
+    }
+
+    for (const row of buildEmployeeSeedRows(users)) {
+      if (row.branchName) {
+        discovered.add(row.branchName);
+      }
+    }
+
+    return Array.from(discovered).sort((left, right) => left.localeCompare(right));
+  }, [dateFilteredResponses, users]);
+
   const categoryFilteredResponses = useMemo(() => {
     return dateFilteredResponses.filter((row) => {
+      if (selectedBranches.length && !selectedBranches.includes(row.branchName)) {
+        return false;
+      }
+
+      if (categoryFilter && row.category !== categoryFilter) {
+        return false;
+      }
+
       if (row.categoryLabel === "Account Receivable related") {
         return accountReceivableFilter
           ? row.categoryValueName === accountReceivableFilter
@@ -385,17 +482,46 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
 
       return true;
     });
-  }, [accountReceivableFilter, branchRelatedFilter, dateFilteredResponses]);
+  }, [accountReceivableFilter, branchRelatedFilter, categoryFilter, dateFilteredResponses, selectedBranches]);
 
   const pendingRows = useMemo(
     () => buildPendingRows(users, dateFilteredResponses),
     [dateFilteredResponses, users],
   );
 
+  const employeeSeedRows = useMemo(() => buildEmployeeSeedRows(users), [users]);
+
+  const pendingFilteredRows = useMemo(() => {
+    if (categoryFilter && categoryFilter !== "pending") {
+      return [];
+    }
+
+    if (!selectedBranches.length) {
+      return pendingRows;
+    }
+
+    return pendingRows.filter((row) => selectedBranches.includes(row.branchName));
+  }, [categoryFilter, pendingRows, selectedBranches]);
+
   const filteredRows = useMemo(
-    () => [...categoryFilteredResponses, ...pendingRows],
-    [categoryFilteredResponses, pendingRows],
+    () => [...categoryFilteredResponses, ...pendingFilteredRows],
+    [categoryFilteredResponses, pendingFilteredRows],
   );
+
+  const categoryOptions = useMemo(() => {
+    const discovered = new Set<string>();
+
+    for (const row of [...dateFilteredResponses, ...pendingRows]) {
+      if (row.category) {
+        discovered.add(row.category);
+      }
+    }
+
+    const ordered = CATEGORY_ORDER.filter((value) => discovered.has(value));
+    const remaining = Array.from(discovered).filter((value) => !CATEGORY_ORDER.includes(value));
+
+    return [...ordered, ...remaining.sort((left, right) => left.localeCompare(right))];
+  }, [dateFilteredResponses, pendingRows]);
 
   const accountReceivableOptions = useMemo(() => {
     return Array.from(
@@ -419,19 +545,50 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     ).sort((left, right) => left.localeCompare(right));
   }, [dateFilteredResponses]);
 
+  const tableRows = filteredRows;
+
+  const pivotRows = useMemo(() => {
+    if (categoryFilter !== "account-receivable" && categoryFilter !== "branch-related") {
+      return tableRows;
+    }
+
+    const seededRows = selectedBranches.length
+      ? employeeSeedRows.filter((row) => selectedBranches.includes(row.branchName))
+      : employeeSeedRows;
+
+    return [...seededRows, ...tableRows].map((row) => {
+      if (row.categoryLabel === "Account Receivable related" || row.categoryLabel === "Branch related") {
+        return {
+          ...row,
+          categoryLabel: row.categoryValueName || "Uncategorized",
+        };
+      }
+
+      return row;
+    });
+  }, [categoryFilter, employeeSeedRows, selectedBranches, tableRows]);
+
   const columns = useMemo(() => {
+    if (categoryFilter === "account-receivable") {
+      return [...accountReceivableOptions, "Leave", "Pending", "Weekoff"];
+    }
+
+    if (categoryFilter === "branch-related") {
+      return [...branchRelatedOptions, "Leave", "Pending", "Weekoff"];
+    }
+
     const discovered = new Set<string>();
 
-    for (const row of filteredRows) {
+    for (const row of pivotRows) {
       if (!COLUMN_ORDER.includes(row.categoryLabel)) {
         discovered.add(row.categoryLabel);
       }
     }
 
     return [...COLUMN_ORDER, ...Array.from(discovered).sort((left, right) => left.localeCompare(right))];
-  }, [filteredRows]);
+  }, [accountReceivableOptions, branchRelatedOptions, categoryFilter, pivotRows]);
 
-  const groupedBranches = useMemo(() => buildGroups(filteredRows), [filteredRows]);
+  const groupedBranches = useMemo(() => buildGroups(pivotRows), [pivotRows]);
 
   const grandTotals = useMemo(() => {
     const totals = new Map<string, CellAggregate>();
@@ -559,8 +716,10 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                     onClick={() => {
                       setDateFrom(today);
                       setDateTo(today);
+                      setCategoryFilter("");
                       setAccountReceivableFilter("");
                       setBranchRelatedFilter("");
+                      setSelectedBranches([]);
                     }}
                     className="text-xs font-semibold text-sky-700"
                   >
@@ -569,40 +728,152 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                 ) : null}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 print:hidden">
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Account receivable
-                </label>
-                <select
-                  value={accountReceivableFilter}
-                  onChange={(event) => setAccountReceivableFilter(event.target.value)}
-                  className="bg-transparent text-sm text-slate-900 outline-none"
-                >
-                  <option value="">All</option>
-                  {accountReceivableOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:min-w-[520px]">
+                <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 print:hidden">
+                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Category
+                  </label>
+                  <select
+                    value={categoryFilter}
+                    onChange={(event) => {
+                      const nextCategory = event.target.value;
+                      setCategoryFilter(nextCategory);
 
-              <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 print:hidden">
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Branch related
-                </label>
-                <select
-                  value={branchRelatedFilter}
-                  onChange={(event) => setBranchRelatedFilter(event.target.value)}
-                  className="bg-transparent text-sm text-slate-900 outline-none"
-                >
-                  <option value="">All</option>
-                  {branchRelatedOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+                      if (nextCategory !== "account-receivable") {
+                        setAccountReceivableFilter("");
+                      }
+
+                      if (nextCategory !== "branch-related") {
+                        setBranchRelatedFilter("");
+                      }
+                    }}
+                    className="min-w-[140px] bg-transparent text-sm text-slate-900 outline-none"
+                  >
+                    <option value="">All</option>
+                    {categoryOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {formatDropdownLabel(option)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {categoryFilter === "account-receivable" ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 print:hidden">
+                    <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Account receivable
+                    </label>
+                    <select
+                      value={accountReceivableFilter}
+                      onChange={(event) => setAccountReceivableFilter(event.target.value)}
+                      className="min-w-[140px] bg-transparent text-sm text-slate-900 outline-none"
+                    >
+                      <option value="">All</option>
+                      {accountReceivableOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+
+                {categoryFilter === "branch-related" ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 print:hidden">
+                    <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Branch related
+                    </label>
+                    <select
+                      value={branchRelatedFilter}
+                      onChange={(event) => setBranchRelatedFilter(event.target.value)}
+                      className="min-w-[140px] bg-transparent text-sm text-slate-900 outline-none"
+                    >
+                      <option value="">All</option>
+                      {branchRelatedOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+
+                                <div ref={branchDropdownRef} className="relative print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setIsBranchDropdownOpen((current) => !current)}
+                    className="flex min-w-[220px] items-center justify-between gap-3 rounded-full border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm outline-none"
+                  >
+                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Branch
+                    </span>
+                    <span className="truncate text-sm font-medium text-slate-700">
+                      {!selectedBranches.length
+                        ? "All"
+                        : selectedBranches.length === 1
+                          ? selectedBranches[0]
+                          : `${selectedBranches.length} selected`}
+                    </span>
+                    <span className="text-slate-400">▾</span>
+                  </button>
+
+                  {isBranchDropdownOpen ? (
+                    <div className="absolute right-0 top-full z-20 mt-2 w-[320px] rounded-xl border border-slate-300 bg-white p-3 shadow-lg">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          Select branches
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBranches([])}
+                            className="text-xs font-semibold text-sky-700"
+                          >
+                            Reset filter
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsBranchDropdownOpen(false)}
+                            className="text-xs font-semibold text-slate-500"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex max-h-56 flex-wrap gap-2 overflow-y-auto pr-1">
+                        <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={!selectedBranches.length}
+                            onChange={() => setSelectedBranches([])}
+                          />
+                          All
+                        </label>
+                        {branchOptions.map((branch) => (
+                          <label
+                            key={branch}
+                            className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-sm text-slate-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedBranches.includes(branch)}
+                              onChange={(event) => {
+                                setSelectedBranches((current) => {
+                                  if (event.target.checked) {
+                                    return current.includes(branch) ? current : [...current, branch];
+                                  }
+
+                                  return current.filter((item) => item !== branch);
+                                });
+                              }}
+                            />
+                            {branch}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
@@ -725,3 +996,4 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     </main>
   );
 }
+
