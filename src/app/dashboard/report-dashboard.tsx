@@ -86,16 +86,28 @@ const COLUMN_ORDER = [
   "Weekoff",
 ];
 
-const SECTION_COLUMNS = new Set(["Account Receivable related", "Branch related"]);
+function getColumnWidthClass(column: string) {
+  if (column === "Leave") {
+    return "w-[48px]";
+  }
 
-function getActivityColumnKey(categoryLabel: string, activityName: string) {
-  return `${categoryLabel}::${activityName}`;
-}
+  if (column === "Pending") {
+    return "w-[56px]";
+  }
 
-function getColumnLabel(column: string) {
-  const separatorIndex = column.indexOf("::");
+  if (column === "Weekoff") {
+    return "w-[56px]";
+  }
 
-  return separatorIndex === -1 ? column : column.slice(separatorIndex + 2);
+  if (column === "Account Receivable related") {
+    return "w-[176px]";
+  }
+
+  if (column === "Branch related") {
+    return "w-[104px]";
+  }
+
+  return "w-[72px]";
 }
 
 function formatDuration(totalMinutes: number) {
@@ -310,26 +322,10 @@ function buildGroups(rows: NormalizedReportRow[]) {
     const cellMinutes = row.isPending || row.status !== "working" ? 0 : row.totalMinutes;
 
     addCellValue(agent.cells, row.categoryLabel, cellCount, cellMinutes);
-    if (SECTION_COLUMNS.has(row.categoryLabel) && row.categoryValueName !== "-") {
-      addCellValue(
-        agent.cells,
-        getActivityColumnKey(row.categoryLabel, row.categoryValueName),
-        cellCount,
-        cellMinutes,
-      );
-    }
     agent.totalCount += cellCount;
     agent.totalMinutes += cellMinutes;
 
     addCellValue(branch.totals, row.categoryLabel, cellCount, cellMinutes);
-    if (SECTION_COLUMNS.has(row.categoryLabel) && row.categoryValueName !== "-") {
-      addCellValue(
-        branch.totals,
-        getActivityColumnKey(row.categoryLabel, row.categoryValueName),
-        cellCount,
-        cellMinutes,
-      );
-    }
     branch.totalCount += cellCount;
     branch.totalMinutes += cellMinutes;
   }
@@ -347,8 +343,8 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
   const today = getTodayInputValue();
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
-  const [sectionFilter, setSectionFilter] = useState("");
-  const [branchNameFilter, setBranchNameFilter] = useState("");
+  const [accountReceivableFilter, setAccountReceivableFilter] = useState("");
+  const [branchRelatedFilter, setBranchRelatedFilter] = useState("");
   const dashboardRef = useRef<HTMLDivElement>(null);
 
   const responseRows = useMemo(() => normalizeResponseRows(responses), [responses]);
@@ -375,61 +371,65 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     return filteredResponses;
   }, [dateFrom, dateTo, responseRows]);
 
+  const categoryFilteredResponses = useMemo(() => {
+    return dateFilteredResponses.filter((row) => {
+      if (row.categoryLabel === "Account Receivable related") {
+        return accountReceivableFilter
+          ? row.categoryValueName === accountReceivableFilter
+          : true;
+      }
+
+      if (row.categoryLabel === "Branch related") {
+        return branchRelatedFilter ? row.categoryValueName === branchRelatedFilter : true;
+      }
+
+      return true;
+    });
+  }, [accountReceivableFilter, branchRelatedFilter, dateFilteredResponses]);
+
   const pendingRows = useMemo(
     () => buildPendingRows(users, dateFilteredResponses),
     [dateFilteredResponses, users],
   );
 
   const filteredRows = useMemo(
-    () => {
-      const rows = [...dateFilteredResponses, ...pendingRows];
-
-      return branchNameFilter
-        ? rows.filter((row) => row.branchName === branchNameFilter)
-        : rows;
-    },
-    [branchNameFilter, dateFilteredResponses, pendingRows],
+    () => [...categoryFilteredResponses, ...pendingRows],
+    [categoryFilteredResponses, pendingRows],
   );
 
-  const branchNameOptions = useMemo(
-    () =>
-      Array.from(new Set([...dateFilteredResponses, ...pendingRows].map((row) => row.branchName))).sort(
-        (left, right) => left.localeCompare(right),
+  const accountReceivableOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        dateFilteredResponses
+          .filter((row) => row.categoryLabel === "Account Receivable related")
+          .map((row) => row.categoryValueName)
+          .filter(Boolean),
       ),
-    [dateFilteredResponses, pendingRows],
-  );
+    ).sort((left, right) => left.localeCompare(right));
+  }, [dateFilteredResponses]);
+
+  const branchRelatedOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        dateFilteredResponses
+          .filter((row) => row.categoryLabel === "Branch related")
+          .map((row) => row.categoryValueName)
+          .filter(Boolean),
+      ),
+    ).sort((left, right) => left.localeCompare(right));
+  }, [dateFilteredResponses]);
 
   const columns = useMemo(() => {
-    const visibleSections = sectionFilter ? [sectionFilter] : Array.from(SECTION_COLUMNS);
-    const sectionColumns = visibleSections.flatMap((section) => [
-      section,
-      ...(sectionFilter
-        ? Array.from(
-            new Set(
-              filteredRows
-                .filter((row) => row.categoryLabel === section)
-                .map((row) => row.categoryValueName)
-                .filter((value) => value && value !== "-"),
-            ),
-          )
-            .sort((left, right) => left.localeCompare(right))
-            .map((activityName) => getActivityColumnKey(section, activityName))
-        : []),
-    ]);
     const discovered = new Set<string>();
 
     for (const row of filteredRows) {
-      if (!SECTION_COLUMNS.has(row.categoryLabel) && !COLUMN_ORDER.includes(row.categoryLabel)) {
+      if (!COLUMN_ORDER.includes(row.categoryLabel)) {
         discovered.add(row.categoryLabel);
       }
     }
 
-    return [
-      ...sectionColumns,
-      ...COLUMN_ORDER.filter((column) => !SECTION_COLUMNS.has(column)),
-      ...Array.from(discovered).sort((left, right) => left.localeCompare(right)),
-    ];
-  }, [filteredRows, sectionFilter]);
+    return [...COLUMN_ORDER, ...Array.from(discovered).sort((left, right) => left.localeCompare(right))];
+  }, [filteredRows]);
 
   const groupedBranches = useMemo(() => buildGroups(filteredRows), [filteredRows]);
 
@@ -559,8 +559,8 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                     onClick={() => {
                       setDateFrom(today);
                       setDateTo(today);
-                      setSectionFilter("");
-                      setBranchNameFilter("");
+                      setAccountReceivableFilter("");
+                      setBranchRelatedFilter("");
                     }}
                     className="text-xs font-semibold text-sky-700"
                   >
@@ -571,30 +571,33 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
 
               <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 print:hidden">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Category
+                  Account receivable
                 </label>
                 <select
-                  value={sectionFilter}
-                  onChange={(event) => setSectionFilter(event.target.value)}
+                  value={accountReceivableFilter}
+                  onChange={(event) => setAccountReceivableFilter(event.target.value)}
                   className="bg-transparent text-sm text-slate-900 outline-none"
                 >
                   <option value="">All</option>
-                  <option value="Account Receivable related">Account Receivable related</option>
-                  <option value="Branch related">Branch related</option>
+                  {accountReceivableOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2 print:hidden">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Row labels
+                  Branch related
                 </label>
                 <select
-                  value={branchNameFilter}
-                  onChange={(event) => setBranchNameFilter(event.target.value)}
+                  value={branchRelatedFilter}
+                  onChange={(event) => setBranchRelatedFilter(event.target.value)}
                   className="bg-transparent text-sm text-slate-900 outline-none"
                 >
                   <option value="">All</option>
-                  {branchNameOptions.map((option) => (
+                  {branchRelatedOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -613,22 +616,13 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                 Grand Total: {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
               </div>
             </div>
-            <table className="min-w-[960px] w-full table-fixed border-collapse text-sm leading-tight">
+            <table className="min-w-[800px] w-full table-fixed border-collapse text-sm leading-tight">
               <colgroup>
-                <col className="w-[220px]" />
+                <col className="w-[180px]" />
                 {columns.map((column) => (
-                  <col
-                    key={`width-${column}`}
-                    className={
-                      getColumnLabel(column) === "Account Receivable related"
-                        ? "w-[135px]"
-                        : getColumnLabel(column) === "Branch related"
-                          ? "w-[110px]"
-                          : "w-[130px]"
-                    }
-                  />
+                  <col key={column} className={getColumnWidthClass(column)} />
                 ))}
-                <col className="w-[120px]" />
+                <col className="w-[90px]" />
               </colgroup>
               <thead>
                 <tr className="bg-sky-100">
@@ -640,7 +634,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                   </th>
                 </tr>
                 <tr className="bg-sky-100">
-                  <th className="border border-slate-400 px-1.5 py-1 text-left font-bold text-slate-900">
+                  <th className="border border-slate-400 px-1 py-1 text-left font-bold text-slate-900">
                     <div className="flex items-center gap-2">
                       <span>Row Labels</span>
                       <span className="inline-flex h-5 w-5 items-center justify-center border border-slate-300 bg-white text-[10px] text-slate-500">
@@ -651,12 +645,12 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                   {columns.map((column) => (
                     <th
                       key={column}
-                      className="border border-slate-400 px-1.5 py-1 text-center font-bold text-slate-900"
+                      className="border border-slate-400 px-0.5 py-1 text-center font-bold text-slate-900 break-words"
                     >
-                      {getColumnLabel(column)}
+                      {column}
                     </th>
                   ))}
-                  <th className="border border-slate-400 px-1.5 py-1 text-center font-bold text-slate-900">
+                  <th className="border border-slate-400 px-1 py-1 text-center font-bold text-slate-900">
                     Grand Total
                   </th>
                 </tr>
@@ -665,7 +659,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                 {groupedBranches.map((branch) => (
                   <Fragment key={branch.branchName}>
                     <tr className="bg-white">
-                      <td className="border border-slate-400 px-1.5 py-1 font-bold text-slate-950">
+                      <td className="border border-slate-400 px-1 py-1 font-bold text-slate-950 break-words">
                         <div className="flex items-center gap-2">
                           <span className="inline-flex h-3.5 w-3.5 items-center justify-center border border-slate-400 bg-slate-100 text-[10px] leading-none text-slate-700">
                             -
@@ -673,33 +667,33 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                           <span>{branch.branchName}</span>
                         </div>
                       </td>
-                      {columns.map((column) => (
-                        <td
-                          key={`${branch.branchName}-subtotal-${column}`}
-                          className="border border-slate-400 px-1.5 py-1 text-center font-bold text-slate-950"
-                        >
-                          {getCellValue(branch.totals.get(column), metricMode)}
-                        </td>
-                      ))}
-                      <td className="border border-slate-400 px-1.5 py-1 text-center font-bold text-slate-950">
+                        {columns.map((column) => (
+                          <td
+                            key={`${branch.branchName}-subtotal-${column}`}
+                            className="border border-slate-400 px-0.5 py-1 text-center font-bold text-slate-950"
+                          >
+                            {getCellValue(branch.totals.get(column), metricMode)}
+                          </td>
+                        ))}
+                      <td className="border border-slate-400 px-1 py-1 text-center font-bold text-slate-950">
                         {formatMetric(branch.totalCount, branch.totalMinutes)}
                       </td>
                     </tr>
 
                     {branch.agents.map((agent) => (
                       <tr key={agent.id} className="bg-white">
-                        <td className="border border-slate-400 px-1.5 py-1 pl-7 text-slate-950">
+                        <td className="border border-slate-400 px-1 py-1 pl-5 text-slate-950 break-words">
                           {agent.label}
                         </td>
                         {columns.map((column) => (
                           <td
                             key={`${agent.id}-${column}`}
-                            className="border border-slate-400 px-1.5 py-1 text-center text-slate-900"
+                            className="border border-slate-400 px-0.5 py-1 text-center text-slate-900"
                           >
                             {getDetailCellValue(column, agent.cells.get(column), metricMode)}
                           </td>
                         ))}
-                        <td className="border border-slate-400 px-1.5 py-1 text-center text-slate-900">
+                        <td className="border border-slate-400 px-1 py-1 text-center text-slate-900">
                           {formatMetric(agent.totalCount, agent.totalMinutes)}
                         </td>
                       </tr>
@@ -708,18 +702,18 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                 ))}
 
                 <tr className="bg-sky-100">
-                  <td className="border border-slate-400 px-1.5 py-1 font-bold text-slate-950">
+                  <td className="border border-slate-400 px-1 py-1 font-bold text-slate-950">
                     Grand Total
                   </td>
                   {columns.map((column) => (
                     <td
                       key={`grand-total-${column}`}
-                      className="border border-slate-400 px-1.5 py-1 text-center font-bold text-slate-950"
+                      className="border border-slate-400 px-0.5 py-1 text-center font-bold text-slate-950"
                     >
                       {getCellValue(grandTotals.totals.get(column), metricMode)}
                     </td>
                   ))}
-                  <td className="border border-slate-400 px-1.5 py-1 text-center font-bold text-slate-950">
+                  <td className="border border-slate-400 px-1 py-1 text-center font-bold text-slate-950">
                     {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
                   </td>
                 </tr>
