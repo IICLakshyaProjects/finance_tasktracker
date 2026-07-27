@@ -627,10 +627,22 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
       return;
     }
 
+    const captureWidth = Math.max(element.scrollWidth, element.clientWidth);
+    const captureHeight = Math.max(element.scrollHeight, element.clientHeight);
+
     const dataUrl = await toPng(element, {
       cacheBust: true,
+      width: captureWidth,
+      height: captureHeight,
+      canvasWidth: captureWidth,
+      canvasHeight: captureHeight,
       pixelRatio: Math.max(2, window.devicePixelRatio || 1),
       backgroundColor: "#ffffff",
+      style: {
+        width: `${captureWidth}px`,
+        height: `${captureHeight}px`,
+        overflow: "visible",
+      },
       filter: (node) => !(node instanceof HTMLElement && node.dataset.screenshotIgnore === "true"),
     });
 
