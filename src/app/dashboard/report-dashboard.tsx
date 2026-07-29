@@ -92,26 +92,26 @@ const CATEGORY_ORDER = ["account-receivable", "branch-related", "leave", "weekof
 
 function getColumnWidthClass(column: string) {
   if (column === "Leave") {
-    return "w-[48px]";
+    return "w-[28px] sm:w-[26px]";
   }
 
   if (column === "Pending") {
-    return "w-[56px]";
+    return "w-[32px] sm:w-[20px]";
   }
 
   if (column === "Weekoff") {
-    return "w-[56px]";
+    return "w-[32px] sm:w-[20px]";
   }
 
   if (column === "Account Receivable related") {
-    return "w-[176px]";
+    return "w-[72px] sm:w-[40px]";
   }
 
   if (column === "Branch related") {
-    return "w-[104px]";
+    return "w-[42px] sm:w-[30px]";
   }
 
-  return "w-[72px]";
+  return "w-[36px] sm:w-[48px]";
 }
 
 function formatDropdownLabel(value: string) {
@@ -890,37 +890,37 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-400 bg-sky-50 px-3 py-2 text-slate-800">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+          <div className="-mx-3 overflow-x-auto px-3 sm:mx-0 sm:px-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-400 bg-sky-50 px-2 py-2 text-slate-800 sm:gap-3 sm:px-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:text-xs sm:tracking-[0.16em]">
                 Date Range: {dateFrom || "Start"} to {dateTo || "End"}
               </div>
-              <div className="text-lg font-bold tracking-tight text-slate-950">
+              <div className="text-base font-bold tracking-tight text-slate-950 sm:text-lg">
                 Grand Total: {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
               </div>
             </div>
-            <table className="min-w-[800px] w-full table-fixed border-collapse text-sm leading-tight">
+            <table className="min-w-[460px] w-full table-fixed border-collapse text-[10px] leading-tight sm:min-w-[560px] sm:text-sm">
               <colgroup>
-                <col className="w-[180px]" />
+                <col className="w-[52px] sm:w-[72px]" />
                 {columns.map((column) => (
                   <col key={column} className={getColumnWidthClass(column)} />
                 ))}
-                <col className="w-[90px]" />
+                <col className="w-[40px] sm:w-[56px]" />
               </colgroup>
               <thead>
                 <tr className="bg-sky-100">
                   <th
                     colSpan={columns.length + 2}
-                    className="border-b border-r border-slate-400 px-1.5 py-1 text-center text-lg font-bold text-slate-950"
+                    className="border-b border-r border-slate-400 px-1 py-1 text-center text-sm font-bold text-slate-950 sm:px-1.5 sm:text-lg"
                   >
                     AR Tracker
                   </th>
                 </tr>
                 <tr className="bg-sky-100">
-                  <th className="border border-slate-400 px-1 py-1 text-left font-bold text-slate-900">
-                    <div className="flex items-center gap-2">
+                  <th className="border border-slate-400 px-0.5 py-1 text-left font-bold text-slate-900 sm:px-1">
+                    <div className="flex items-center gap-0.5">
                       <span>Row Labels</span>
-                      <span className="inline-flex h-5 w-5 items-center justify-center border border-slate-300 bg-white text-[10px] text-slate-500">
+                      <span className="inline-flex h-4 w-4 items-center justify-center border border-slate-300 bg-white text-[9px] text-slate-500">
                         v
                       </span>
                     </div>
@@ -928,12 +928,12 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                   {columns.map((column) => (
                     <th
                       key={column}
-                      className="border border-slate-400 px-0.5 py-1 text-center font-bold text-slate-900 break-words"
+                      className="border border-slate-400 px-0.5 py-1 text-center text-[10px] font-bold text-slate-900 break-words sm:text-sm"
                     >
                       {column}
                     </th>
                   ))}
-                  <th className="border border-slate-400 px-1 py-1 text-center font-bold text-slate-900">
+                  <th className="border border-slate-400 px-0.5 py-1 text-center text-[9px] font-bold text-slate-900 sm:px-1 sm:text-sm">
                     Grand Total
                   </th>
                 </tr>
@@ -942,9 +942,9 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                 {groupedBranches.map((branch) => (
                   <Fragment key={branch.branchName}>
                     <tr className="bg-white">
-                      <td className="border border-slate-400 px-1 py-1 font-bold text-slate-950 break-words">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex h-3.5 w-3.5 items-center justify-center border border-slate-400 bg-slate-100 text-[10px] leading-none text-slate-700">
+                      <td className="border border-slate-400 px-0.5 py-1 font-bold text-slate-950 break-words sm:px-1">
+                        <div className="flex items-center gap-0.5 sm:gap-1">
+                          <span className="inline-flex h-3 w-3 items-center justify-center border border-slate-400 bg-slate-100 text-[9px] leading-none text-slate-700 sm:h-3.5 sm:w-3.5 sm:text-[10px]">
                             -
                           </span>
                           <span>{branch.branchName}</span>
@@ -958,14 +958,14 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                             {getCellValue(branch.totals.get(column), metricMode)}
                           </td>
                         ))}
-                      <td className="border border-slate-400 px-1 py-1 text-center font-bold text-slate-950">
+                      <td className="border border-slate-400 px-0.5 py-1 text-center font-bold text-slate-950 sm:px-1">
                         {formatMetric(branch.totalCount, branch.totalMinutes)}
                       </td>
                     </tr>
 
                     {branch.agents.map((agent) => (
                       <tr key={agent.id} className="bg-white">
-                        <td className="border border-slate-400 px-1 py-1 pl-5 text-slate-950 break-words">
+                        <td className="border border-slate-400 px-0.5 py-1 pl-1.5 text-slate-950 break-words sm:px-1 sm:pl-3">
                           {agent.label}
                         </td>
                         {columns.map((column) => (
@@ -976,7 +976,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                             {getDetailCellValue(column, agent.cells.get(column), metricMode)}
                           </td>
                         ))}
-                        <td className="border border-slate-400 px-1 py-1 text-center text-slate-900">
+                        <td className="border border-slate-400 px-0.5 py-1 text-center text-slate-900 sm:px-1">
                           {formatMetric(agent.totalCount, agent.totalMinutes)}
                         </td>
                       </tr>
@@ -985,7 +985,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                 ))}
 
                 <tr className="bg-sky-100">
-                  <td className="border border-slate-400 px-1 py-1 font-bold text-slate-950">
+                  <td className="border border-slate-400 px-0.5 py-1 font-bold text-slate-950 sm:px-1">
                     Grand Total
                   </td>
                   {columns.map((column) => (
@@ -996,7 +996,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                       {getCellValue(grandTotals.totals.get(column), metricMode)}
                     </td>
                   ))}
-                  <td className="border border-slate-400 px-1 py-1 text-center font-bold text-slate-950">
+                  <td className="border border-slate-400 px-0.5 py-1 text-center font-bold text-slate-950 sm:px-1">
                     {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
                   </td>
                 </tr>
@@ -1008,4 +1008,3 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     </main>
   );
 }
-
