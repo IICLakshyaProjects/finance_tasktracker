@@ -90,28 +90,31 @@ const COLUMN_ORDER = [
 
 const CATEGORY_ORDER = ["account-receivable", "branch-related", "leave", "weekoff", "pending"];
 
-function getColumnWidthClass(column: string) {
-  if (column === "Leave") {
-    return "w-[28px] sm:w-[26px]";
-  }
+const TABLE_LABEL_WIDTH = "10.5rem";
+const TABLE_TOTAL_WIDTH = "5rem";
 
-  if (column === "Pending") {
-    return "w-[32px] sm:w-[20px]";
-  }
-
-  if (column === "Weekoff") {
-    return "w-[32px] sm:w-[20px]";
-  }
-
+function getTableColumnWidth(column: string) {
   if (column === "Account Receivable related") {
-    return "w-[72px] sm:w-[40px]";
+    return "10.5rem";
   }
 
   if (column === "Branch related") {
-    return "w-[42px] sm:w-[30px]";
+    return "8.5rem";
   }
 
-  return "w-[36px] sm:w-[48px]";
+  if (column === "Leave") {
+    return "5rem";
+  }
+
+  if (column === "Pending") {
+    return "5.5rem";
+  }
+
+  if (column === "Weekoff") {
+    return "5.5rem";
+  }
+
+  return "7rem";
 }
 
 function formatDropdownLabel(value: string) {
@@ -388,6 +391,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
+  const reportCaptureRef = useRef<HTMLDivElement>(null);
   const branchDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -621,41 +625,67 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     metricMode === "time" ? formatDuration(minutes) : String(count);
 
   const handleScreenshot = async () => {
-    const element = dashboardRef.current;
+    const source = reportCaptureRef.current ?? dashboardRef.current;
 
-    if (!element) {
+    if (!source) {
       return;
     }
 
-    const captureWidth = Math.max(element.scrollWidth, element.clientWidth);
-    const captureHeight = Math.max(element.scrollHeight, element.clientHeight);
+    const clone = source.cloneNode(true) as HTMLElement;
+    const sourceRect = source.getBoundingClientRect();
+    const captureWidth = Math.ceil(Math.max(source.scrollWidth, sourceRect.width, 1));
+    const captureHeight = Math.ceil(Math.max(source.scrollHeight, sourceRect.height, 1));
 
-    const dataUrl = await toPng(element, {
-      cacheBust: true,
-      width: captureWidth,
-      height: captureHeight,
-      canvasWidth: captureWidth,
-      canvasHeight: captureHeight,
-      pixelRatio: Math.max(2, window.devicePixelRatio || 1),
-      backgroundColor: "#ffffff",
-      style: {
-        width: `${captureWidth}px`,
-        height: `${captureHeight}px`,
-        overflow: "visible",
-      },
-      filter: (node) => !(node instanceof HTMLElement && node.dataset.screenshotIgnore === "true"),
+    clone.querySelectorAll<HTMLElement>('[data-screenshot-ignore="true"]').forEach((node) => {
+      node.remove();
     });
 
-    const link = document.createElement("a");
-    link.download = `ar-tracker-${dateFrom || today}${dateTo && dateTo !== dateFrom ? `-to-${dateTo}` : ""}.png`;
-    link.href = dataUrl;
-    link.click();
+    clone.style.position = "fixed";
+    clone.style.left = "-10000px";
+    clone.style.top = "0";
+    clone.style.margin = "0";
+    clone.style.background = "#ffffff";
+    clone.style.display = "inline-block";
+    clone.style.width = `${captureWidth}px`;
+    clone.style.height = "auto";
+    clone.style.maxWidth = "none";
+    clone.style.maxHeight = "none";
+    clone.style.overflow = "visible";
+    clone.style.pointerEvents = "none";
+
+    document.body.appendChild(clone);
+
+    try {
+      await document.fonts?.ready;
+
+      const dataUrl = await toPng(clone, {
+        cacheBust: true,
+        width: captureWidth,
+        height: captureHeight,
+        canvasWidth: captureWidth,
+        canvasHeight: captureHeight,
+        pixelRatio: Math.max(2, window.devicePixelRatio || 1),
+        backgroundColor: "#ffffff",
+        style: {
+          width: `${captureWidth}px`,
+          height: `${captureHeight}px`,
+          overflow: "visible",
+        },
+      });
+
+      const link = document.createElement("a");
+      link.download = `ar-tracker-${dateFrom || today}${dateTo && dateTo !== dateFrom ? `-to-${dateTo}` : ""}.png`;
+      link.href = dataUrl;
+      link.click();
+    } finally {
+      clone.remove();
+    }
   };
 
   return (
     <main className="min-h-screen bg-slate-100 px-3 py-4 text-slate-900 sm:px-4 lg:px-6">
-      <div ref={dashboardRef} className="mx-auto flex w-full max-w-[1600px] flex-col gap-3">
-        <section className="rounded-none border border-slate-400 bg-white shadow-sm">
+      <div ref={dashboardRef} className="mx-auto flex w-fit max-w-none flex-col gap-3">
+        <section className="w-fit rounded-none border border-slate-400 bg-white shadow-sm">
           <div
             className="border-b border-slate-400 bg-sky-100 px-3 py-2"
             data-screenshot-ignore="true"
@@ -891,117 +921,126 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
           </div>
 
           <div className="-mx-3 overflow-x-auto px-3 sm:mx-0 sm:px-0">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-400 bg-sky-50 px-2 py-2 text-slate-800 sm:gap-3 sm:px-3">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:text-xs sm:tracking-[0.16em]">
-                Date Range: {dateFrom || "Start"} to {dateTo || "End"}
+            <div ref={reportCaptureRef} className="mx-auto w-max">
+              <div className="flex w-full flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-slate-50 px-2 py-1.5 text-slate-700 sm:gap-3 sm:px-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:text-xs sm:tracking-[0.16em]">
+                  Date Range: {dateFrom || "Start"} to {dateTo || "End"}
+                </div>
+                <div className="text-base font-semibold tracking-tight text-slate-950 sm:text-lg">
+                  Grand Total: {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
+                </div>
               </div>
-              <div className="text-base font-bold tracking-tight text-slate-950 sm:text-lg">
-                Grand Total: {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
-              </div>
-            </div>
-            <table className="min-w-[460px] w-full table-fixed border-collapse text-[10px] leading-tight sm:min-w-[560px] sm:text-sm">
-              <colgroup>
-                <col className="w-[52px] sm:w-[72px]" />
-                {columns.map((column) => (
-                  <col key={column} className={getColumnWidthClass(column)} />
-                ))}
-                <col className="w-[40px] sm:w-[56px]" />
-              </colgroup>
-              <thead>
-                <tr className="bg-sky-100">
-                  <th
-                    colSpan={columns.length + 2}
-                    className="border-b border-r border-slate-400 px-1 py-1 text-center text-sm font-bold text-slate-950 sm:px-1.5 sm:text-lg"
+              <div className="flex justify-center px-2 py-2">
+                <table className="inline-table min-w-max table-fixed border-separate border-spacing-0 text-[10px] leading-tight sm:text-sm">
+                <colgroup>
+                  <col style={{ width: TABLE_LABEL_WIDTH }} />
+                  {columns.map((column) => (
+                    <col key={column} style={{ width: getTableColumnWidth(column) }} />
+                  ))}
+                  <col style={{ width: TABLE_TOTAL_WIDTH }} />
+                </colgroup>
+                <thead>
+                  <tr className="bg-sky-100">
+                    <th
+                      colSpan={columns.length + 2}
+                    className="border-b border-slate-300 px-1.5 py-1 text-center text-sm font-semibold tracking-tight text-slate-950 sm:text-[15px]"
                   >
                     AR Tracker
                   </th>
                 </tr>
-                <tr className="bg-sky-100">
-                  <th className="border border-slate-400 px-0.5 py-1 text-left font-bold text-slate-900 sm:px-1">
-                    <div className="flex items-center gap-0.5">
-                      <span>Row Labels</span>
-                      <span className="inline-flex h-4 w-4 items-center justify-center border border-slate-300 bg-white text-[9px] text-slate-500">
-                        v
-                      </span>
-                    </div>
-                  </th>
-                  {columns.map((column) => (
-                    <th
-                      key={column}
-                      className="border border-slate-400 px-0.5 py-1 text-center text-[10px] font-bold text-slate-900 break-words sm:text-sm"
-                    >
-                      {column}
+                <tr className="bg-slate-50">
+                    <th className="border-b border-r border-slate-300 px-1 py-[3px] text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 sm:text-[11px]">
+                      <div className="flex items-center gap-1">
+                        <span className="truncate">Row Labels</span>
+                        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-white text-[9px] text-slate-500">
+                          v
+                        </span>
+                      </div>
                     </th>
-                  ))}
-                  <th className="border border-slate-400 px-0.5 py-1 text-center text-[9px] font-bold text-slate-900 sm:px-1 sm:text-sm">
-                    Grand Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupedBranches.map((branch) => (
-                  <Fragment key={branch.branchName}>
-                    <tr className="bg-white">
-                      <td className="border border-slate-400 px-0.5 py-1 font-bold text-slate-950 break-words sm:px-1">
-                        <div className="flex items-center gap-0.5 sm:gap-1">
-                          <span className="inline-flex h-3 w-3 items-center justify-center border border-slate-400 bg-slate-100 text-[9px] leading-none text-slate-700 sm:h-3.5 sm:w-3.5 sm:text-[10px]">
-                            -
-                          </span>
-                          <span>{branch.branchName}</span>
-                        </div>
-                      </td>
+                    {columns.map((column) => (
+                      <th
+                        key={column}
+                        title={column}
+                      className="border-b border-r border-slate-300 px-0.5 py-[3px] text-center text-[10px] font-semibold text-slate-700 sm:text-[11px]"
+                      >
+                        <span className="block truncate px-0.5">{column}</span>
+                      </th>
+                    ))}
+                    <th className="border-b border-slate-300 px-0.5 py-[3px] text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-700 sm:text-[11px]">
+                      Grand Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupedBranches.map((branch) => (
+                    <Fragment key={branch.branchName}>
+                      <tr className="bg-white">
+                      <td className="border-b border-r border-slate-200 px-1 py-[3px] font-semibold text-slate-950">
+                          <div className="flex items-center gap-1">
+                            <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-slate-50 text-[9px] leading-none text-slate-600">
+                              -
+                            </span>
+                            <span className="truncate" title={branch.branchName}>
+                              {branch.branchName}
+                            </span>
+                          </div>
+                        </td>
                         {columns.map((column) => (
                           <td
                             key={`${branch.branchName}-subtotal-${column}`}
-                            className="border border-slate-400 px-0.5 py-1 text-center font-bold text-slate-950"
+                            className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950"
                           >
                             {getCellValue(branch.totals.get(column), metricMode)}
                           </td>
                         ))}
-                      <td className="border border-slate-400 px-0.5 py-1 text-center font-bold text-slate-950 sm:px-1">
-                        {formatMetric(branch.totalCount, branch.totalMinutes)}
-                      </td>
-                    </tr>
-
-                    {branch.agents.map((agent) => (
-                      <tr key={agent.id} className="bg-white">
-                        <td className="border border-slate-400 px-0.5 py-1 pl-1.5 text-slate-950 break-words sm:px-1 sm:pl-3">
-                          {agent.label}
-                        </td>
-                        {columns.map((column) => (
-                          <td
-                            key={`${agent.id}-${column}`}
-                            className="border border-slate-400 px-0.5 py-1 text-center text-slate-900"
-                          >
-                            {getDetailCellValue(column, agent.cells.get(column), metricMode)}
-                          </td>
-                        ))}
-                        <td className="border border-slate-400 px-0.5 py-1 text-center text-slate-900 sm:px-1">
-                          {formatMetric(agent.totalCount, agent.totalMinutes)}
+                        <td className="border-b border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
+                          {formatMetric(branch.totalCount, branch.totalMinutes)}
                         </td>
                       </tr>
-                    ))}
-                  </Fragment>
-                ))}
 
-                <tr className="bg-sky-100">
-                  <td className="border border-slate-400 px-0.5 py-1 font-bold text-slate-950 sm:px-1">
-                    Grand Total
-                  </td>
-                  {columns.map((column) => (
-                    <td
-                      key={`grand-total-${column}`}
-                      className="border border-slate-400 px-0.5 py-1 text-center font-bold text-slate-950"
-                    >
-                      {getCellValue(grandTotals.totals.get(column), metricMode)}
-                    </td>
+                      {branch.agents.map((agent) => (
+                        <tr key={agent.id} className="bg-white">
+                          <td className="border-b border-r border-slate-200 px-1 py-[3px] pl-3 text-slate-700">
+                            <span className="block truncate" title={agent.label}>
+                              {agent.label}
+                            </span>
+                          </td>
+                          {columns.map((column) => (
+                            <td
+                              key={`${agent.id}-${column}`}
+                              className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center text-slate-800"
+                            >
+                              {getDetailCellValue(column, agent.cells.get(column), metricMode)}
+                            </td>
+                          ))}
+                          <td className="border-b border-slate-200 px-0.5 py-[3px] text-center text-slate-800">
+                            {formatMetric(agent.totalCount, agent.totalMinutes)}
+                          </td>
+                        </tr>
+                      ))}
+                    </Fragment>
                   ))}
-                  <td className="border border-slate-400 px-0.5 py-1 text-center font-bold text-slate-950 sm:px-1">
-                    {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+
+                  <tr className="bg-slate-100">
+                    <td className="border-b border-r border-slate-200 px-1.5 py-[3px] font-semibold text-slate-950">
+                      Grand Total
+                    </td>
+                    {columns.map((column) => (
+                      <td
+                        key={`grand-total-${column}`}
+                        className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950"
+                      >
+                        {getCellValue(grandTotals.totals.get(column), metricMode)}
+                      </td>
+                    ))}
+                    <td className="border-b border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
+                      {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              </div>
+            </div>
           </div>
         </section>
       </div>
