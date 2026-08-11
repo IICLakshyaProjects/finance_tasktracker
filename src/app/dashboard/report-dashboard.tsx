@@ -384,12 +384,17 @@ function buildEmployeeSeedRows(users: UserRecord[]) {
     }));
 }
 
-function getCellValue(cell: CellAggregate | undefined, metric: MetricMode, column?: string) {
+function getCellValue(
+  cell: CellAggregate | undefined,
+  metric: MetricMode,
+  column?: string,
+  showPeriodCounts = true,
+) {
   if (!cell?.hasValue) {
     return "";
   }
 
-  if (column && isStatusCountColumn(column)) {
+  if (column && isStatusCountColumn(column) && showPeriodCounts) {
     return String(cell.count);
   }
 
@@ -397,7 +402,7 @@ function getCellValue(cell: CellAggregate | undefined, metric: MetricMode, colum
 }
 
 function isStatusCountColumn(column: string) {
-  return column === "Leave" || column === "Weekoff" || column === "Pending";
+  return column === "Leave" || column === "Weekoff";
 }
 
 function getDetailCellValue(
@@ -405,20 +410,21 @@ function getDetailCellValue(
   cell: CellAggregate | undefined,
   metric: MetricMode,
   storedTime?: string,
+  showPeriodCounts = true,
 ) {
   if (!cell?.hasValue) {
     return "";
   }
 
-  if (isStatusCountColumn(column)) {
-    return getCellValue(cell, metric, column);
+  if (isStatusCountColumn(column) && showPeriodCounts) {
+    return getCellValue(cell, metric, column, showPeriodCounts);
   }
 
   if (metric === "time" && storedTime) {
     return storedTime;
   }
 
-  return getCellValue(cell, metric, column);
+  return getCellValue(cell, metric, column, showPeriodCounts);
 }
 
 function makeCellAggregate(count = 0, minutes = 0, hasValue = false): CellAggregate {
@@ -762,10 +768,18 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     [columns, grandTotals.totals, metricMode, pivotRows],
   );
 
-  const grandWorkingDays = useMemo(() => String(countWorkingDayUnits(pivotRows)), [pivotRows]);
+  const showPeriodCounts = periodMode !== "custom";
+
+  const grandWorkingDays = useMemo(() => {
+    if (!showPeriodCounts) {
+      return "";
+    }
+
+    return String(countWorkingDayUnits(pivotRows));
+  }, [pivotRows, showPeriodCounts]);
 
   const getWorkingDaysValue = (branchName?: string, agentName?: string) =>
-    String(countWorkingDayUnits(pivotRows, branchName, agentName));
+    showPeriodCounts ? String(countWorkingDayUnits(pivotRows, branchName, agentName)) : "";
 
   const handleScreenshot = async () => {
     const source = reportCaptureRef.current ?? dashboardRef.current;
@@ -1176,7 +1190,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                             key={`${branch.branchName}-subtotal-${column}`}
                             className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950"
                           >
-                            {getCellValue(branch.totals.get(column), metricMode, column)}
+                            {getCellValue(branch.totals.get(column), metricMode, column, showPeriodCounts)}
                           </td>
                         ))}
                         <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
@@ -1208,7 +1222,13 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                               key={`${agent.id}-${column}`}
                               className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center text-slate-800"
                             >
-                              {getDetailCellValue(column, agent.cells.get(column), metricMode)}
+                              {getDetailCellValue(
+                                column,
+                                agent.cells.get(column),
+                                metricMode,
+                                undefined,
+                                showPeriodCounts,
+                              )}
                             </td>
                           ))}
                           <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center text-slate-800">
@@ -1241,7 +1261,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                         key={`grand-total-${column}`}
                         className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950"
                       >
-                        {getCellValue(grandTotals.totals.get(column), metricMode, column)}
+                        {getCellValue(grandTotals.totals.get(column), metricMode, column, showPeriodCounts)}
                       </td>
                     ))}
                     <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
