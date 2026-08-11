@@ -394,15 +394,15 @@ function getCellValue(
     return "";
   }
 
-  if (column && isStatusCountColumn(column) && showPeriodCounts) {
-    return String(cell.count);
+  if (column && isStatusCountColumn(column)) {
+    return showPeriodCounts ? String(cell.count) : column;
   }
 
   return metric === "time" ? formatDuration(cell.minutes) : String(cell.count);
 }
 
 function isStatusCountColumn(column: string) {
-  return column === "Leave" || column === "Weekoff";
+  return column === "Leave" || column === "Weekoff" || column === "Pending";
 }
 
 function getDetailCellValue(
@@ -416,7 +416,7 @@ function getDetailCellValue(
     return "";
   }
 
-  if (isStatusCountColumn(column) && showPeriodCounts) {
+  if (isStatusCountColumn(column)) {
     return getCellValue(cell, metric, column, showPeriodCounts);
   }
 
@@ -769,17 +769,18 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
   );
 
   const showPeriodCounts = periodMode !== "custom";
+  const displayWorkingDaysColumn = showPeriodCounts;
 
   const grandWorkingDays = useMemo(() => {
-    if (!showPeriodCounts) {
+    if (!displayWorkingDaysColumn) {
       return "";
     }
 
     return String(countWorkingDayUnits(pivotRows));
-  }, [pivotRows, showPeriodCounts]);
+  }, [displayWorkingDaysColumn, pivotRows]);
 
   const getWorkingDaysValue = (branchName?: string, agentName?: string) =>
-    showPeriodCounts ? String(countWorkingDayUnits(pivotRows, branchName, agentName)) : "";
+    displayWorkingDaysColumn ? String(countWorkingDayUnits(pivotRows, branchName, agentName)) : "";
 
   const handleScreenshot = async () => {
     const source = reportCaptureRef.current ?? dashboardRef.current;
@@ -1123,14 +1124,16 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                   {columns.map((column) => (
                     <col key={column} style={{ width: getTableColumnWidth(column) }} />
                   ))}
-                  <col style={{ width: getTableColumnWidth(WORKING_DAYS_COLUMN) }} />
+                  {displayWorkingDaysColumn ? (
+                    <col style={{ width: getTableColumnWidth(WORKING_DAYS_COLUMN) }} />
+                  ) : null}
                   <col style={{ width: getTableColumnWidth(AVG_COLUMN) }} />
                   <col style={{ width: TABLE_TOTAL_WIDTH }} />
                 </colgroup>
                 <thead>
                   <tr className="bg-sky-100">
                     <th
-                      colSpan={columns.length + 4}
+                      colSpan={columns.length + 3 + (displayWorkingDaysColumn ? 1 : 0)}
                     className="border-b border-slate-300 px-1.5 py-1 text-center text-sm font-semibold tracking-tight text-slate-950 sm:text-[15px]"
                   >
                     AR Tracker
@@ -1154,12 +1157,14 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                         <span className="block truncate px-0.5">{column}</span>
                       </th>
                     ))}
-                    <th
-                      title={WORKING_DAYS_COLUMN}
-                      className="border-b border-r border-slate-300 px-0.5 py-[3px] text-center text-[10px] font-semibold text-slate-700 sm:text-[11px]"
-                    >
-                      <span className="block truncate px-0.5">{WORKING_DAYS_COLUMN}</span>
-                    </th>
+                    {displayWorkingDaysColumn ? (
+                      <th
+                        title={WORKING_DAYS_COLUMN}
+                        className="border-b border-r border-slate-300 px-0.5 py-[3px] text-center text-[10px] font-semibold text-slate-700 sm:text-[11px]"
+                      >
+                        <span className="block truncate px-0.5">{WORKING_DAYS_COLUMN}</span>
+                      </th>
+                    ) : null}
                     <th
                       title={AVG_COLUMN}
                       className="border-b border-r border-slate-300 px-0.5 py-[3px] text-center text-[10px] font-semibold text-slate-700 sm:text-[11px]"
@@ -1193,9 +1198,11 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                             {getCellValue(branch.totals.get(column), metricMode, column, showPeriodCounts)}
                           </td>
                         ))}
-                        <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
-                          {getWorkingDaysValue(branch.branchName)}
-                        </td>
+                        {displayWorkingDaysColumn ? (
+                          <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
+                            {getWorkingDaysValue(branch.branchName)}
+                          </td>
+                        ) : null}
                         <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
                           {getAverageValue(
                             branch.totals,
@@ -1231,9 +1238,11 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                               )}
                             </td>
                           ))}
-                          <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center text-slate-800">
-                            {getWorkingDaysValue(branch.branchName, agent.label)}
-                          </td>
+                          {displayWorkingDaysColumn ? (
+                            <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center text-slate-800">
+                              {getWorkingDaysValue(branch.branchName, agent.label)}
+                            </td>
+                          ) : null}
                           <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center text-slate-800">
                             {getAverageValue(
                               agent.cells,
@@ -1264,9 +1273,11 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                         {getCellValue(grandTotals.totals.get(column), metricMode, column, showPeriodCounts)}
                       </td>
                     ))}
-                    <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
-                      {grandWorkingDays}
-                    </td>
+                    {displayWorkingDaysColumn ? (
+                      <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
+                        {grandWorkingDays}
+                      </td>
+                    ) : null}
                     <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
                       {grandAverage}
                     </td>
