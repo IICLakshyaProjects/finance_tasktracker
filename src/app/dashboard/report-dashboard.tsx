@@ -93,6 +93,7 @@ const CATEGORY_ORDER = ["account-receivable", "branch-related", "leave", "weekof
 
 const TABLE_LABEL_WIDTH = "10.5rem";
 const TABLE_TOTAL_WIDTH = "5rem";
+const WORKING_DAYS_COLUMN = "Working Days";
 const AVG_COLUMN = "Avg";
 
 const EXCLUDED_FROM_AVG = new Set(["Leave", "Pending", "Weekoff"]);
@@ -116,6 +117,10 @@ function getTableColumnWidth(column: string) {
 
   if (column === "Weekoff") {
     return "5.5rem";
+  }
+
+  if (column === WORKING_DAYS_COLUMN) {
+    return "6rem";
   }
 
   if (column === AVG_COLUMN) {
@@ -379,12 +384,20 @@ function buildEmployeeSeedRows(users: UserRecord[]) {
     }));
 }
 
-function getCellValue(cell: CellAggregate | undefined, metric: MetricMode) {
+function getCellValue(cell: CellAggregate | undefined, metric: MetricMode, column?: string) {
   if (!cell?.hasValue) {
     return "";
   }
 
+  if (column && isStatusCountColumn(column)) {
+    return String(cell.count);
+  }
+
   return metric === "time" ? formatDuration(cell.minutes) : String(cell.count);
+}
+
+function isStatusCountColumn(column: string) {
+  return column === "Leave" || column === "Weekoff" || column === "Pending";
 }
 
 function getDetailCellValue(
@@ -397,15 +410,15 @@ function getDetailCellValue(
     return "";
   }
 
-  if (column === "Leave" || column === "Weekoff") {
-    return column;
+  if (isStatusCountColumn(column)) {
+    return getCellValue(cell, metric, column);
   }
 
   if (metric === "time" && storedTime) {
     return storedTime;
   }
 
-  return getCellValue(cell, metric);
+  return getCellValue(cell, metric, column);
 }
 
 function makeCellAggregate(count = 0, minutes = 0, hasValue = false): CellAggregate {
@@ -749,6 +762,11 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     [columns, grandTotals.totals, metricMode, pivotRows],
   );
 
+  const grandWorkingDays = useMemo(() => String(countWorkingDayUnits(pivotRows)), [pivotRows]);
+
+  const getWorkingDaysValue = (branchName?: string, agentName?: string) =>
+    String(countWorkingDayUnits(pivotRows, branchName, agentName));
+
   const handleScreenshot = async () => {
     const source = reportCaptureRef.current ?? dashboardRef.current;
 
@@ -1091,13 +1109,14 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                   {columns.map((column) => (
                     <col key={column} style={{ width: getTableColumnWidth(column) }} />
                   ))}
+                  <col style={{ width: getTableColumnWidth(WORKING_DAYS_COLUMN) }} />
                   <col style={{ width: getTableColumnWidth(AVG_COLUMN) }} />
                   <col style={{ width: TABLE_TOTAL_WIDTH }} />
                 </colgroup>
                 <thead>
                   <tr className="bg-sky-100">
                     <th
-                      colSpan={columns.length + 3}
+                      colSpan={columns.length + 4}
                     className="border-b border-slate-300 px-1.5 py-1 text-center text-sm font-semibold tracking-tight text-slate-950 sm:text-[15px]"
                   >
                     AR Tracker
@@ -1121,6 +1140,12 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                         <span className="block truncate px-0.5">{column}</span>
                       </th>
                     ))}
+                    <th
+                      title={WORKING_DAYS_COLUMN}
+                      className="border-b border-r border-slate-300 px-0.5 py-[3px] text-center text-[10px] font-semibold text-slate-700 sm:text-[11px]"
+                    >
+                      <span className="block truncate px-0.5">{WORKING_DAYS_COLUMN}</span>
+                    </th>
                     <th
                       title={AVG_COLUMN}
                       className="border-b border-r border-slate-300 px-0.5 py-[3px] text-center text-[10px] font-semibold text-slate-700 sm:text-[11px]"
@@ -1151,9 +1176,12 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                             key={`${branch.branchName}-subtotal-${column}`}
                             className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950"
                           >
-                            {getCellValue(branch.totals.get(column), metricMode)}
+                            {getCellValue(branch.totals.get(column), metricMode, column)}
                           </td>
                         ))}
+                        <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
+                          {getWorkingDaysValue(branch.branchName)}
+                        </td>
                         <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
                           {getAverageValue(
                             branch.totals,
@@ -1184,6 +1212,9 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                             </td>
                           ))}
                           <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center text-slate-800">
+                            {getWorkingDaysValue(branch.branchName, agent.label)}
+                          </td>
+                          <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center text-slate-800">
                             {getAverageValue(
                               agent.cells,
                               columns,
@@ -1210,9 +1241,12 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                         key={`grand-total-${column}`}
                         className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950"
                       >
-                        {getCellValue(grandTotals.totals.get(column), metricMode)}
+                        {getCellValue(grandTotals.totals.get(column), metricMode, column)}
                       </td>
                     ))}
+                    <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
+                      {grandWorkingDays}
+                    </td>
                     <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
                       {grandAverage}
                     </td>
