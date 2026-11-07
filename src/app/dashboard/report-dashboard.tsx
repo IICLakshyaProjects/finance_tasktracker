@@ -883,28 +883,6 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={applyWeeklyRange}
-                  className={`rounded-full px-4 py-2 transition ${
-                    periodMode === "weekly"
-                      ? "bg-sky-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  Weekly
-                </button>
-                <button
-                  type="button"
-                  onClick={applyMonthlyRange}
-                  className={`rounded-full px-4 py-2 transition ${
-                    periodMode === "monthly"
-                      ? "bg-sky-600 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  Monthly
-                </button>
-                <button
-                  type="button"
                   onClick={() => void handleScreenshot()}
                   data-screenshot-ignore="true"
                   className="rounded-full px-4 py-2 text-slate-600 transition hover:bg-slate-100"
