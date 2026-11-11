@@ -815,7 +815,7 @@ export async function updateUser(input: {
         "passwordSetupTokenHash" = CASE WHEN $7 IS NULL THEN "passwordSetupTokenHash" ELSE NULL END,
         "passwordSetupExpiresAt" = CASE WHEN $7 IS NULL THEN "passwordSetupExpiresAt" ELSE NULL END,
         "passwordSetAt" = CASE WHEN $7 IS NULL THEN "passwordSetAt" ELSE NOW() END,
-        status = CASE WHEN $7 IS NULL THEN status ELSE 'ACTIVE' END,
+        status = CASE WHEN $7 IS NULL OR status::text = 'DISABLED' THEN status ELSE 'ACTIVE' END,
         "updatedAt" = NOW()
       WHERE id = $1
       RETURNING
@@ -833,6 +833,25 @@ export async function updateUser(input: {
   );
 
   return result.rows[0] ?? null;
+}
+
+export async function setUserDisabled(id: string, disabled: boolean) {
+  const result = await query(
+    `
+      UPDATE "users"
+      SET
+        status = CASE
+          WHEN $2 THEN 'DISABLED'
+          WHEN "passwordHash" IS NULL THEN 'INVITED'
+          ELSE 'ACTIVE'
+        END,
+        "updatedAt" = NOW()
+      WHERE id = $1
+    `,
+    [id, disabled],
+  );
+
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function deleteUser(id: string) {
@@ -1114,7 +1133,7 @@ export async function updateUserPassword(input: {
         "passwordSetupTokenHash" = NULL,
         "passwordSetupExpiresAt" = NULL,
         "passwordSetAt" = NOW(),
-        status = 'ACTIVE',
+        status = CASE WHEN status::text = 'DISABLED' THEN status ELSE 'ACTIVE' END,
         "updatedAt" = NOW()
       WHERE email = $2
     `,

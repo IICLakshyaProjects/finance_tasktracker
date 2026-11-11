@@ -15,6 +15,7 @@ import {
   deleteResponses,
   deleteTeamLead,
   deleteUser,
+  setUserDisabled,
   updateAccountReceivable,
   updateBranchRelated,
   updateCampus,
@@ -502,6 +503,30 @@ export async function deleteUserAction(
   revalidatePath("/admin");
   refresh();
   return deleted ? success("User deleted.") : failure("Could not delete user.");
+}
+
+export async function setUserActiveAction(
+  previousState: AdminActionState = initialState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  void previousState;
+
+  const id = readId(formData);
+  if (!id) {
+    return failure("User id is required.");
+  }
+
+  const disable = readString(formData, "disable") === "true";
+  const updated = await setUserDisabled(id, disable);
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+  refresh();
+
+  if (!updated) {
+    return failure(`Could not ${disable ? "deactivate" : "activate"} user.`);
+  }
+
+  return success(disable ? "User deactivated." : "User activated.");
 }
 
 export async function updateActivityDateSettingsAction(

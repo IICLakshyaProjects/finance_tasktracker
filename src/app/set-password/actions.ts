@@ -41,6 +41,7 @@ export async function setPasswordAction(
 
   if (
     !user ||
+    user.status.toUpperCase() === "DISABLED" ||
     !user.passwordSetupTokenHash ||
     !user.passwordSetupExpiresAt ||
     user.passwordSetupTokenHash !== hashToken(token) ||
@@ -83,6 +84,10 @@ export async function resendPasswordSetupAction(
 
   if (!user) {
     return { error: "No account found for that email address.", message: "" };
+  }
+
+  if (user.status.toUpperCase() === "DISABLED") {
+    return { error: "This account has been deactivated. Contact an admin.", message: "" };
   }
 
   const setupToken = createRandomToken();

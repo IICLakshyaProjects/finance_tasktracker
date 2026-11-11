@@ -19,6 +19,7 @@ import {
   deleteCampusAction,
   deleteTeamLeadAction,
   deleteUserAction,
+  setUserActiveAction,
   updateActivityDateSettingsAction,
   updateAccountReceivablesAction,
   updateBranchRelatedAction,
@@ -316,6 +317,10 @@ function statusTone(status: string) {
     return "bg-amber-500/12 text-amber-200 ring-1 ring-amber-300/20";
   }
 
+  if (normalized === "DISABLED") {
+    return "bg-rose-500/12 text-rose-600 ring-1 ring-rose-400/20";
+  }
+
   return "bg-slate-500/12 text-slate-200 ring-1 ring-slate-400/20";
 }
 
@@ -483,6 +488,8 @@ export function AdminDashboard({
       ),
     );
 
+    const activeUsers = users.filter((user) => user.status.trim().toUpperCase() !== "DISABLED");
+
     if (selectedDates.length) {
       return selectedDates.flatMap((date) => {
         const responsesOnDate = responses.filter((item) => item.responseDate === date);
@@ -492,7 +499,7 @@ export function AdminDashboard({
           ),
         );
 
-        return users
+        return activeUsers
           .filter((user) => {
             const userIdentities = [user.username, user.email, user.name ?? ""];
 
@@ -527,7 +534,7 @@ export function AdminDashboard({
       });
     }
 
-    return users
+    return activeUsers
       .filter((user) => user.role.trim().toUpperCase() !== "ADMIN")
       .filter((user) => !isExcludedResponseIdentity(user.username, user.email, user.name))
       .filter((user) => {
@@ -857,7 +864,9 @@ export function AdminDashboard({
                               statusTone(user.status),
                             ].join(" ")}
                           >
-                            {user.status.charAt(0).toUpperCase() + user.status.slice(1).toLowerCase()}
+                            {user.status.toUpperCase() === "DISABLED"
+                              ? "Deactivated"
+                              : user.status.charAt(0).toUpperCase() + user.status.slice(1).toLowerCase()}
                           </span>
                         </div>
                         <div className="col-span-2 text-sm text-slate-600">{formatDateTime(user.createdAt)}</div>
@@ -869,6 +878,38 @@ export function AdminDashboard({
                           >
                             Edit
                           </button>
+                          <form
+                            action={async (formData) => {
+                              await setUserActiveAction(undefined, formData);
+                            }}
+                          >
+                            <input type="hidden" name="id" value={user.id} />
+                            <input
+                              type="hidden"
+                              name="disable"
+                              value={user.status.toUpperCase() === "DISABLED" ? "false" : "true"}
+                            />
+                            {user.status.toUpperCase() === "DISABLED" ? (
+                              <button
+                                type="submit"
+                                className="rounded-full border border-emerald-300 px-3 py-2 text-xs font-medium text-emerald-700 transition hover:bg-emerald-50"
+                              >
+                                Activate
+                              </button>
+                            ) : (
+                              <button
+                                type="submit"
+                                onClick={(event) => {
+                                  if (!window.confirm(`Deactivate ${user.email}? They will no longer be able to log in.`)) {
+                                    event.preventDefault();
+                                  }
+                                }}
+                                className="rounded-full border border-amber-300 px-3 py-2 text-xs font-medium text-amber-700 transition hover:bg-amber-50"
+                              >
+                                Deactivate
+                              </button>
+                            )}
+                          </form>
                           <DeleteButton
                             action={async (formData) => {
                               await deleteUserAction(undefined, formData);
