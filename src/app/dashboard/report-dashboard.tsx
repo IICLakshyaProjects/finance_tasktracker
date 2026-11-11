@@ -41,7 +41,7 @@ type DashboardReportProps = {
 };
 
 type MetricMode = "count" | "time";
-type PeriodMode = "custom" | "weekly" | "monthly";
+type PeriodMode = "custom" | "daily" | "weekly" | "monthly";
 
 type NormalizedReportRow = {
   responseDate: string;
@@ -340,6 +340,7 @@ function buildPendingRows(users: UserRecord[], responseRows: NormalizedReportRow
   );
 
   return users
+    .filter((user) => user.status.trim().toUpperCase() !== "DISABLED")
     .filter((user) => user.role.trim().toUpperCase() !== "ADMIN")
     .filter((user) => !isExcludedResponseIdentity(user.username, user.email, user.name))
     .filter((user) => {
@@ -365,6 +366,7 @@ function buildPendingRows(users: UserRecord[], responseRows: NormalizedReportRow
 
 function buildEmployeeSeedRows(users: UserRecord[]) {
   return users
+    .filter((user) => user.status.trim().toUpperCase() !== "DISABLED")
     .filter((user) => user.role.trim().toUpperCase() !== "ADMIN")
     .filter((user) => !isExcludedResponseIdentity(user.username, user.email, user.name))
     .map<NormalizedReportRow>((user) => ({
@@ -388,14 +390,13 @@ function getCellValue(
   cell: CellAggregate | undefined,
   metric: MetricMode,
   column?: string,
-  showPeriodCounts = true,
 ) {
   if (!cell?.hasValue) {
     return "";
   }
 
   if (column && isStatusCountColumn(column)) {
-    return showPeriodCounts ? String(cell.count) : column;
+    return String(cell.count);
   }
 
   return metric === "time" ? formatDuration(cell.minutes) : String(cell.count);
@@ -410,21 +411,20 @@ function getDetailCellValue(
   cell: CellAggregate | undefined,
   metric: MetricMode,
   storedTime?: string,
-  showPeriodCounts = true,
 ) {
   if (!cell?.hasValue) {
     return "";
   }
 
   if (isStatusCountColumn(column)) {
-    return getCellValue(cell, metric, column, showPeriodCounts);
+    return getCellValue(cell, metric, column);
   }
 
   if (metric === "time" && storedTime) {
     return storedTime;
   }
 
-  return getCellValue(cell, metric, column, showPeriodCounts);
+  return getCellValue(cell, metric, column);
 }
 
 function makeCellAggregate(count = 0, minutes = 0, hasValue = false): CellAggregate {
@@ -763,13 +763,25 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
     setDateTo(today);
   };
 
+  const applyDailyRange = () => {
+    if (periodMode === "daily") {
+      setPeriodMode("custom");
+      return;
+    }
+
+    setPeriodMode("daily");
+    setDateFrom(today);
+    setDateTo(today);
+  };
+
   const grandAverage = useMemo(
     () => getAverageValue(grandTotals.totals, columns, pivotRows, metricMode),
     [columns, grandTotals.totals, metricMode, pivotRows],
   );
 
-  const showPeriodCounts = periodMode !== "custom";
-  const displayWorkingDaysColumn = showPeriodCounts;
+
+  const displayAvgColumn = periodMode !== "daily";
+  const displayWorkingDaysColumn = periodMode === "weekly" || periodMode === "monthly";
 
   const grandWorkingDays = useMemo(() => {
     if (!displayWorkingDaysColumn) {
@@ -872,6 +884,17 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                 </button>
                 <button
                   type="button"
+                  onClick={applyDailyRange}
+                  className={`rounded-full px-4 py-2 transition ${
+                    periodMode === "daily"
+                      ? "bg-sky-600 text-white"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  Daily
+                </button>
+                <button
+                  type="button"
                   onClick={() => setMetricMode("count")}
                   className={`rounded-full px-4 py-2 transition ${
                     metricMode === "count"
@@ -894,28 +917,49 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
               <div
                 className="flex flex-wrap items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-2"
               >
-                <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  From
-                </label>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(event) => {
-                    setPeriodMode("custom");
-                    setDateFrom(event.target.value);
-                  }}
-                  className="bg-transparent text-sm text-slate-900 outline-none"
-                />
-                <span className="text-slate-300">to</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(event) => {
-                    setPeriodMode("custom");
-                    setDateTo(event.target.value);
-                  }}
-                  className="bg-transparent text-sm text-slate-900 outline-none"
-                />
+                {periodMode === "daily" ? (
+                  <>
+                    <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      max={today}
+                      onChange={(event) => {
+                        const value = event.target.value || today;
+                        setDateFrom(value);
+                        setDateTo(value);
+                      }}
+                      className="bg-transparent text-sm text-slate-900 outline-none"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <label className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      From
+                    </label>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(event) => {
+                        setPeriodMode("custom");
+                        setDateFrom(event.target.value);
+                      }}
+                      className="bg-transparent text-sm text-slate-900 outline-none"
+                    />
+                    <span className="text-slate-300">to</span>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(event) => {
+                        setPeriodMode("custom");
+                        setDateTo(event.target.value);
+                      }}
+                      className="bg-transparent text-sm text-slate-900 outline-none"
+                    />
+                  </>
+                )}
                 {(dateFrom || dateTo) ? (
                   <button
                     type="button"
@@ -1089,7 +1133,9 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
             <div ref={reportCaptureRef} className="mx-auto w-max">
               <div className="flex w-full flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-slate-50 px-2 py-1.5 text-slate-700 sm:gap-3 sm:px-3">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:text-xs sm:tracking-[0.16em]">
-                  Date Range: {dateFrom || "Start"} to {dateTo || "End"}
+                  {periodMode === "daily"
+                    ? `Date: ${dateFrom || today}`
+                    : `Date Range: ${dateFrom || "Start"} to ${dateTo || "End"}`}
                 </div>
                 <div className="text-base font-semibold tracking-tight text-slate-950 sm:text-lg">
                   Grand Total: {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
@@ -1105,13 +1151,20 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                   {displayWorkingDaysColumn ? (
                     <col style={{ width: getTableColumnWidth(WORKING_DAYS_COLUMN) }} />
                   ) : null}
-                  <col style={{ width: getTableColumnWidth(AVG_COLUMN) }} />
+                  {displayAvgColumn ? (
+                    <col style={{ width: getTableColumnWidth(AVG_COLUMN) }} />
+                  ) : null}
                   <col style={{ width: TABLE_TOTAL_WIDTH }} />
                 </colgroup>
                 <thead>
                   <tr className="bg-sky-100">
                     <th
-                      colSpan={columns.length + 3 + (displayWorkingDaysColumn ? 1 : 0)}
+                      colSpan={
+                        columns.length +
+                        2 +
+                        (displayAvgColumn ? 1 : 0) +
+                        (displayWorkingDaysColumn ? 1 : 0)
+                      }
                     className="border-b border-slate-300 px-1.5 py-1 text-center text-sm font-semibold tracking-tight text-slate-950 sm:text-[15px]"
                   >
                     AR Tracker
@@ -1143,12 +1196,14 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                         <span className="block truncate px-0.5">{WORKING_DAYS_COLUMN}</span>
                       </th>
                     ) : null}
-                    <th
-                      title={AVG_COLUMN}
-                      className="border-b border-r border-slate-300 px-0.5 py-[3px] text-center text-[10px] font-semibold text-slate-700 sm:text-[11px]"
-                    >
-                      <span className="block truncate px-0.5">{AVG_COLUMN}</span>
-                    </th>
+                    {displayAvgColumn ? (
+                      <th
+                        title={AVG_COLUMN}
+                        className="border-b border-r border-slate-300 px-0.5 py-[3px] text-center text-[10px] font-semibold text-slate-700 sm:text-[11px]"
+                      >
+                        <span className="block truncate px-0.5">{AVG_COLUMN}</span>
+                      </th>
+                    ) : null}
                     <th className="border-b border-slate-300 px-0.5 py-[3px] text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-700 sm:text-[11px]">
                       Grand Total
                     </th>
@@ -1173,7 +1228,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                             key={`${branch.branchName}-subtotal-${column}`}
                             className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950"
                           >
-                            {getCellValue(branch.totals.get(column), metricMode, column, showPeriodCounts)}
+                            {getCellValue(branch.totals.get(column), metricMode, column)}
                           </td>
                         ))}
                         {displayWorkingDaysColumn ? (
@@ -1181,15 +1236,17 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                             {getWorkingDaysValue(branch.branchName)}
                           </td>
                         ) : null}
-                        <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
-                          {getAverageValue(
-                            branch.totals,
-                            columns,
-                            pivotRows,
-                            metricMode,
-                            branch.branchName,
-                          )}
-                        </td>
+                        {displayAvgColumn ? (
+                          <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
+                            {getAverageValue(
+                              branch.totals,
+                              columns,
+                              pivotRows,
+                              metricMode,
+                              branch.branchName,
+                            )}
+                          </td>
+                        ) : null}
                         <td className="border-b border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
                           {formatMetric(branch.totalCount, branch.totalMinutes)}
                         </td>
@@ -1212,7 +1269,6 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                                 agent.cells.get(column),
                                 metricMode,
                                 undefined,
-                                showPeriodCounts,
                               )}
                             </td>
                           ))}
@@ -1221,16 +1277,18 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                               {getWorkingDaysValue(branch.branchName, agent.label)}
                             </td>
                           ) : null}
-                          <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center text-slate-800">
-                            {getAverageValue(
-                              agent.cells,
-                              columns,
-                              pivotRows,
-                              metricMode,
-                              branch.branchName,
-                              agent.label,
-                            )}
-                          </td>
+                          {displayAvgColumn ? (
+                            <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center text-slate-800">
+                              {getAverageValue(
+                                agent.cells,
+                                columns,
+                                pivotRows,
+                                metricMode,
+                                branch.branchName,
+                                agent.label,
+                              )}
+                            </td>
+                          ) : null}
                           <td className="border-b border-slate-200 px-0.5 py-[3px] text-center text-slate-800">
                             {formatMetric(agent.totalCount, agent.totalMinutes)}
                           </td>
@@ -1248,7 +1306,7 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                         key={`grand-total-${column}`}
                         className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950"
                       >
-                        {getCellValue(grandTotals.totals.get(column), metricMode, column, showPeriodCounts)}
+                        {getCellValue(grandTotals.totals.get(column), metricMode, column)}
                       </td>
                     ))}
                     {displayWorkingDaysColumn ? (
@@ -1256,9 +1314,11 @@ export function DashboardReport({ responses, users }: DashboardReportProps) {
                         {grandWorkingDays}
                       </td>
                     ) : null}
-                    <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
-                      {grandAverage}
-                    </td>
+                    {displayAvgColumn ? (
+                      <td className="border-b border-r border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
+                        {grandAverage}
+                      </td>
+                    ) : null}
                     <td className="border-b border-slate-200 px-0.5 py-[3px] text-center font-semibold text-slate-950">
                       {formatMetric(grandTotals.totalCount, grandTotals.totalMinutes)}
                     </td>

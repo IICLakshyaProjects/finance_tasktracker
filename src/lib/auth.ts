@@ -190,5 +190,18 @@ export async function getSession(): Promise<Session | null> {
     return null;
   }
 
-  return verifySessionToken(token, config.sessionSecret);
+  const session = verifySessionToken(token, config.sessionSecret);
+
+  if (!session) {
+    return null;
+  }
+
+  if (session.role === "admin" && session.username === config.adminUsername) {
+    return session;
+  }
+
+  // Deactivated (or deleted) users lose access immediately, even with a valid cookie.
+  const user = await findUserForLogin(session.username);
+
+  return user ? session : null;
 }
