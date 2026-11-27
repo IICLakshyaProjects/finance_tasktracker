@@ -11,10 +11,12 @@ import {
 import {
   addAccountReceivablesAction,
   addBranchRelatedAction,
+  addBranchHeadAction,
   addCampusAction,
   addTeamLeadAction,
   createUserAction,
   deleteAccountReceivablesAction,
+  deleteBranchHeadAction,
   deleteBranchRelatedAction,
   deleteCampusAction,
   deleteTeamLeadAction,
@@ -23,6 +25,7 @@ import {
   updateActivityDateSettingsAction,
   updateAccountReceivablesAction,
   updateBranchRelatedAction,
+  updateBranchHeadAction,
   updateCampusAction,
   updateTeamLeadAction,
   updateUserAction,
@@ -43,6 +46,11 @@ type TeamLeadRecord = {
   name: string;
 };
 
+type BranchHeadRecord = {
+  id: string;
+  name: string;
+};
+
 type AccountReceivableRecord = {
   id: string;
   name: string;
@@ -56,6 +64,7 @@ type ResponseRecord = {
   branchId: string;
   branchName: string;
   teamLeadName: string;
+  branchHeadName: string;
   responseDate: string;
   category: string;
   categoryLabel: string;
@@ -80,6 +89,10 @@ type UserRecord = {
   email: string;
   campusId: string | null;
   campusName: string | null;
+  teamLeadId: string | null;
+  teamLeadName: string | null;
+  branchHeadId: string | null;
+  branchHeadName: string | null;
   role: string;
   status: string;
   createdAt: string;
@@ -100,17 +113,26 @@ type AdminDashboardProps = {
   branchRelated: BranchRelatedRecord[];
   campuses: CampusRecord[];
   teamLeads: TeamLeadRecord[];
+  branchHeads: BranchHeadRecord[];
   accountReceivables: AccountReceivableRecord[];
   responses: ResponseRecord[];
   activityDateSettings: ActivityDateSettings;
 };
 
-type TabKey = "users" | "campus" | "team-leads" | "account-receivables" | "branch-related" | "response";
+type TabKey =
+  | "users"
+  | "campus"
+  | "team-leads"
+  | "branch-heads"
+  | "account-receivables"
+  | "branch-related"
+  | "response";
 
 type EditingEntity =
   | { kind: "user"; item: UserRecord }
   | { kind: "campus"; item: CampusRecord }
   | { kind: "team-lead"; item: TeamLeadRecord }
+  | { kind: "branch-head"; item: BranchHeadRecord }
   | { kind: "account"; item: AccountReceivableRecord }
   | { kind: "branch"; item: BranchRelatedRecord }
   | null;
@@ -119,6 +141,7 @@ const tabs: Array<{ key: TabKey; label: string }> = [
   { key: "users", label: "User creation" },
   { key: "campus", label: "Campus" },
   { key: "team-leads", label: "Team Lead" },
+  { key: "branch-heads", label: "Branch Head" },
   { key: "account-receivables", label: "Account receivables" },
   { key: "branch-related", label: "Branch related" },
   { key: "response", label: "Response" },
@@ -267,6 +290,7 @@ function downloadResponsesCsv(rows: ResponseTableRow[], filename: string) {
     "Branch",
     "Date",
     "Team Lead",
+    "Branch Head",
     "Category",
     "Value",
     "Count",
@@ -284,6 +308,7 @@ function downloadResponsesCsv(rows: ResponseTableRow[], filename: string) {
       item.branchName,
       item.responseDate,
       item.teamLeadName,
+      item.branchHeadName,
       item.categoryLabel,
       item.categoryValueName,
       String(item.totalCount),
@@ -401,6 +426,7 @@ export function AdminDashboard({
   branchRelated,
   campuses,
   teamLeads,
+  branchHeads,
   accountReceivables,
   responses,
   activityDateSettings,
@@ -411,10 +437,13 @@ export function AdminDashboard({
   const [activeTab, setActiveTab] = useState<TabKey>("users");
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [editingEntity, setEditingEntity] = useState<EditingEntity>(null);
+  const [userSearchFilter, setUserSearchFilter] = useState("");
+  const [userListKind, setUserListKind] = useState<"users" | "admins">("users");
   const [responseNameFilter, setResponseNameFilter] = useState("");
   const [responseBranchFilter, setResponseBranchFilter] = useState("");
   const [responseStatusFilter, setResponseStatusFilter] = useState("");
   const [responseTeamLead, setResponseTeamLead] = useState("");
+  const [responseBranchHead, setResponseBranchHead] = useState("");
   const [responseDateFrom, setResponseDateFrom] = useState("");
   const [responseDateTo, setResponseDateTo] = useState("");
 
@@ -447,6 +476,14 @@ export function AdminDashboard({
     updateTeamLeadAction,
     emptyState,
   );
+  const [branchHeadCreateState, branchHeadCreateAction, branchHeadCreatePending] = useActionState(
+    addBranchHeadAction,
+    emptyState,
+  );
+  const [branchHeadEditState, branchHeadEditAction, branchHeadEditPending] = useActionState(
+    updateBranchHeadAction,
+    emptyState,
+  );
   const [accountCreateState, accountCreateAction, accountCreatePending] = useActionState(
     addAccountReceivablesAction,
     emptyState,
@@ -467,6 +504,8 @@ export function AdminDashboard({
   const campusEditMessageRef = useRef(campusEditState.message);
   const teamLeadMessageRef = useRef(teamLeadCreateState.message);
   const teamLeadEditMessageRef = useRef(teamLeadEditState.message);
+  const branchHeadMessageRef = useRef(branchHeadCreateState.message);
+  const branchHeadEditMessageRef = useRef(branchHeadEditState.message);
   const accountMessageRef = useRef(accountCreateState.message);
   const accountEditMessageRef = useRef(accountEditState.message);
   const activityDateMessageRef = useRef(activityDateState.message);
@@ -518,6 +557,7 @@ export function AdminDashboard({
             branchId: user.campusId || "",
             branchName: user.campusName || "—",
             teamLeadName: "—",
+            branchHeadName: "—",
             responseDate: date,
             category: "pending",
             categoryLabel: "Pending",
@@ -550,6 +590,7 @@ export function AdminDashboard({
         branchId: user.campusId || "",
         branchName: user.campusName || "—",
         teamLeadName: "—",
+        branchHeadName: "—",
         responseDate: "",
         category: "pending",
         categoryLabel: "Pending",
@@ -589,8 +630,19 @@ export function AdminDashboard({
       const teamLeadMatch = responseTeamLead
         ? item.teamLeadName.toLowerCase().includes(responseTeamLead.toLowerCase())
         : true;
+      const branchHeadMatch = responseBranchHead
+        ? item.branchHeadName.toLowerCase().includes(responseBranchHead.toLowerCase())
+        : true;
 
-      return !excludedUser && dateMatch && nameMatch && branchMatch && statusMatch && teamLeadMatch;
+      return (
+        !excludedUser &&
+        dateMatch &&
+        nameMatch &&
+        branchMatch &&
+        statusMatch &&
+        teamLeadMatch &&
+        branchHeadMatch
+      );
     }).map(normalizeResponseRowForDisplay);
 
     const pendingRows = pendingResponseRows.filter((item) => {
@@ -610,14 +662,18 @@ export function AdminDashboard({
       const teamLeadMatch = responseTeamLead
         ? item.teamLeadName.toLowerCase().includes(responseTeamLead.toLowerCase())
         : true;
+      const branchHeadMatch = responseBranchHead
+        ? item.branchHeadName.toLowerCase().includes(responseBranchHead.toLowerCase())
+        : true;
 
-      return dateMatch && nameMatch && branchMatch && statusMatch && teamLeadMatch;
+      return dateMatch && nameMatch && branchMatch && statusMatch && teamLeadMatch && branchHeadMatch;
     }).map(normalizeResponseRowForDisplay);
 
     return [...responseRows, ...pendingRows];
   }, [
     pendingResponseRows,
     responseBranchFilter,
+    responseBranchHead,
     responseDateFrom,
     responseDateTo,
     responseNameFilter,
@@ -636,11 +692,56 @@ export function AdminDashboard({
     ).sort();
   }, [responses]);
 
+  const usersByListKind = useMemo(() => {
+    return users.filter((user) => {
+      const isAdmin = user.role.trim().toUpperCase() === "ADMIN";
+      return userListKind === "admins" ? isAdmin : !isAdmin;
+    });
+  }, [userListKind, users]);
+
+  const userListTotals = useMemo(() => {
+    let regular = 0;
+    let admins = 0;
+    for (const user of users) {
+      if (user.role.trim().toUpperCase() === "ADMIN") {
+        admins += 1;
+      } else {
+        regular += 1;
+      }
+    }
+    return { regular, admins };
+  }, [users]);
+
+  const filteredUsers = useMemo(() => {
+    const query = userSearchFilter.trim().toLowerCase();
+    const pool = query
+      ? usersByListKind.filter((user) => {
+          const haystack = [
+            user.name ?? "",
+            user.email,
+            user.username,
+            user.teamLeadName ?? "",
+            user.branchHeadName ?? "",
+          ]
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(query);
+        })
+      : usersByListKind;
+
+    return pool;
+  }, [userSearchFilter, usersByListKind]);
+
+  const resetUserFilters = () => {
+    setUserSearchFilter("");
+  };
+
   const resetResponseFilters = () => {
     setResponseNameFilter("");
     setResponseBranchFilter("");
     setResponseStatusFilter("");
     setResponseTeamLead("");
+    setResponseBranchHead("");
     setResponseDateFrom("");
     setResponseDateTo("");
   };
@@ -728,6 +829,26 @@ export function AdminDashboard({
 
   useEffect(() => {
     const messageChanged =
+      branchHeadCreateState.message && branchHeadCreateState.message !== branchHeadMessageRef.current;
+
+    if (messageChanged || branchHeadCreateState.error) {
+      branchHeadMessageRef.current = branchHeadCreateState.message;
+    }
+  }, [branchHeadCreateState.error, branchHeadCreateState.message]);
+
+  useEffect(() => {
+    const messageChanged =
+      branchHeadEditState.message && branchHeadEditState.message !== branchHeadEditMessageRef.current;
+
+    if (messageChanged || branchHeadEditState.error) {
+      setEditingEntity(null);
+    }
+
+    branchHeadEditMessageRef.current = branchHeadEditState.message;
+  }, [branchHeadEditState.error, branchHeadEditState.message]);
+
+  useEffect(() => {
+    const messageChanged =
       accountCreateState.message && accountCreateState.message !== accountMessageRef.current;
 
     if (messageChanged || accountCreateState.error) {
@@ -759,6 +880,8 @@ export function AdminDashboard({
       ? campusEditState
       : editingEntity?.kind === "team-lead"
         ? teamLeadEditState
+      : editingEntity?.kind === "branch-head"
+        ? branchHeadEditState
       : editingEntity?.kind === "account"
         ? accountEditState
         : emptyState;
@@ -814,7 +937,7 @@ export function AdminDashboard({
                 title="User management"
                 subtitle="Create users, assign a role, store them in the database, and send the password setup link."
               >
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
                   <p className="text-sm leading-6 text-slate-500">
                     Name, username/email, and password are optional. Choose the user type to grant admin access.
                   </p>
@@ -826,24 +949,87 @@ export function AdminDashboard({
                     Create user
                   </button>
                 </div>
+                <div className="mt-6 flex flex-wrap items-end gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                  <div className="min-w-[min(100%,280px)] flex-1">
+                    <label
+                      htmlFor="user-search"
+                      className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"
+                    >
+                      Search users
+                    </label>
+                    <input
+                      id="user-search"
+                      type="search"
+                      value={userSearchFilter}
+                      onChange={(event) => setUserSearchFilter(event.target.value)}
+                      placeholder="Search by name or email"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                    />
+                    <p className="mt-2 text-sm text-slate-600">
+                      Showing {filteredUsers.length} of{" "}
+                      {userListKind === "admins" ? userListTotals.admins : userListTotals.regular}{" "}
+                      {userListKind === "admins" ? "admins" : "users"}
+                    </p>
+                  </div>
+                  {userSearchFilter.trim() ? (
+                    <button
+                      type="button"
+                      onClick={resetUserFilters}
+                      className="rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+                    >
+                      Clear search
+                    </button>
+                  ) : null}
+                </div>
                 <InlineStatus state={userCreateState} />
               </SectionCard>
 
               <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.06)]">
+                <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setUserListKind("users")}
+                      className={[
+                        "rounded-full px-5 py-2.5 text-sm font-semibold transition",
+                        userListKind === "users"
+                          ? "bg-slate-950 text-white shadow-md shadow-slate-950/15"
+                          : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100",
+                      ].join(" ")}
+                    >
+                      Users ({userListTotals.regular})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUserListKind("admins")}
+                      className={[
+                        "rounded-full px-5 py-2.5 text-sm font-semibold transition",
+                        userListKind === "admins"
+                          ? "bg-slate-950 text-white shadow-md shadow-slate-950/15"
+                          : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100",
+                      ].join(" ")}
+                    >
+                      Admins ({userListTotals.admins})
+                    </button>
+                  </div>
+                </div>
                 <div className="border-b border-slate-200 bg-slate-50 px-6 py-5">
                   <div className="grid grid-cols-12 gap-4 text-sm font-semibold uppercase tracking-[0.08em] text-slate-500">
                     <div className="col-span-3">Email</div>
-                    <div className="col-span-2">Campus</div>
-                    <div className="col-span-2">Role</div>
-                    <div className="col-span-2">Status</div>
+                    <div className="col-span-1">Campus</div>
+                    <div className="col-span-1">Team lead</div>
+                    <div className="col-span-1">Branch head</div>
+                    <div className="col-span-1">Role</div>
+                    <div className="col-span-1">Status</div>
                     <div className="col-span-2">Created</div>
                     <div className="col-span-2 text-right">Actions</div>
                   </div>
                 </div>
 
                 <div className="divide-y divide-slate-100">
-                  {users.length ? (
-                    users.map((user) => (
+                  {usersByListKind.length ? (
+                    filteredUsers.length ? (
+                    filteredUsers.map((user) => (
                     <div key={user.id} className="grid grid-cols-12 items-center gap-4 px-6 py-6">
                         <div className="col-span-3 min-w-0">
                           <p className="truncate text-[1.05rem] font-medium text-slate-950">
@@ -851,13 +1037,15 @@ export function AdminDashboard({
                           </p>
                           <p className="mt-1 text-sm text-slate-500">{user.name || "Unnamed user"}</p>
                         </div>
-                        <div className="col-span-2 text-sm font-medium text-slate-600">
-                          {user.campusName || "No campus"}
+                        <div className="col-span-1 text-sm font-medium text-slate-600">
+                          {user.campusName || "—"}
                         </div>
-                        <div className="col-span-2 text-sm font-medium uppercase tracking-[0.14em] text-slate-700">
+                        <div className="col-span-1 text-sm text-slate-600">{user.teamLeadName || "—"}</div>
+                        <div className="col-span-1 text-sm text-slate-600">{user.branchHeadName || "—"}</div>
+                        <div className="col-span-1 text-sm font-medium uppercase tracking-[0.14em] text-slate-700">
                           {user.role}
                         </div>
-                        <div className="col-span-2">
+                        <div className="col-span-1">
                           <span
                             className={[
                               "inline-flex rounded-full px-3 py-1 text-sm font-medium",
@@ -920,8 +1108,15 @@ export function AdminDashboard({
                         </div>
                       </div>
                     ))
+                    ) : (
+                      <div className="px-6 py-12 text-sm text-slate-500">
+                        No {userListKind === "admins" ? "admins" : "users"} match the current search.
+                      </div>
+                    )
                   ) : (
-                    <div className="px-6 py-12 text-sm text-slate-500">No users added yet.</div>
+                    <div className="px-6 py-12 text-sm text-slate-500">
+                      {userListKind === "admins" ? "No admins added yet." : "No users added yet."}
+                    </div>
                   )}
                 </div>
               </section>
@@ -992,6 +1187,44 @@ export function AdminDashboard({
                           ))}
                         </select>
                       </div>
+                      <div className="grid gap-5 lg:grid-cols-2">
+                        <div>
+                          <label htmlFor="user-team-lead" className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600">
+                            Team lead (optional)
+                          </label>
+                          <select
+                            id="user-team-lead"
+                            name="teamLeadId"
+                            defaultValue=""
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                          >
+                            <option value="">Not assigned</option>
+                            {teamLeads.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor="user-branch-head" className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600">
+                            Branch head (optional)
+                          </label>
+                          <select
+                            id="user-branch-head"
+                            name="branchHeadId"
+                            defaultValue=""
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                          >
+                            <option value="">Not assigned</option>
+                            {branchHeads.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
                       <div>
                         <label htmlFor="user-password" className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600">
                           Password
@@ -1049,6 +1282,24 @@ export function AdminDashboard({
                     options={[
                       ["", "Select campus"],
                       ...campuses.map((campus) => [campus.id, campus.name] as [string, string]),
+                    ]}
+                  />
+                  <SelectField
+                    name="teamLeadId"
+                    label="Team lead (optional)"
+                    defaultValue={editingEntity.item.teamLeadId ?? ""}
+                    options={[
+                      ["", "Not assigned"],
+                      ...teamLeads.map((item) => [item.id, item.name] as [string, string]),
+                    ]}
+                  />
+                  <SelectField
+                    name="branchHeadId"
+                    label="Branch head (optional)"
+                    defaultValue={editingEntity.item.branchHeadId ?? ""}
+                    options={[
+                      ["", "Not assigned"],
+                      ...branchHeads.map((item) => [item.id, item.name] as [string, string]),
                     ]}
                   />
                   <Field label="Password" name="password" type="password" placeholder="Leave blank to keep current password" />
@@ -1135,6 +1386,74 @@ export function AdminDashboard({
                 <EditModal title="Edit team lead" onClose={() => setEditingEntity(null)} action={teamLeadEditAction} pending={teamLeadEditPending} state={activeEditState}>
                   <input type="hidden" name="id" value={editingEntity.item.id} />
                   <Field label="Team lead name" name="name" defaultValue={editingEntity.item.name} />
+                </EditModal>
+              ) : null}
+            </SectionCard>
+          ) : null}
+
+          {activeTab === "branch-heads" ? (
+            <SectionCard
+              title="Add branch head"
+              subtitle="The name must match an active user's display name from User creation (case-insensitive)."
+            >
+              <form action={branchHeadCreateAction} className="grid gap-4 max-w-xl">
+                <Field
+                  label="Branch head name"
+                  name="name"
+                  placeholder="Same as user name, e.g. Rajesh Kumar"
+                />
+                <button
+                  type="submit"
+                  disabled={branchHeadCreatePending}
+                  className="inline-flex w-fit items-center justify-center rounded-full bg-violet-500 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {branchHeadCreatePending ? "Adding..." : "Add branch head"}
+                </button>
+              </form>
+              <InlineStatus state={branchHeadCreateState} />
+              <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200">
+                <div className="grid grid-cols-12 gap-4 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  <div className="col-span-10">Name</div>
+                  <div className="col-span-2 text-right">Actions</div>
+                </div>
+                <div className="divide-y divide-slate-100 bg-white">
+                  {branchHeads.length ? (
+                    branchHeads.map((item) => (
+                      <div key={item.id} className="grid grid-cols-12 items-center gap-4 px-4 py-3">
+                        <div className="col-span-10 text-sm text-slate-700">{item.name}</div>
+                        <div className="col-span-2 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingEntity({ kind: "branch-head", item })}
+                            className="rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                          >
+                            Edit
+                          </button>
+                          <DeleteButton
+                            action={async (formData) => {
+                              await deleteBranchHeadAction(undefined, formData);
+                            }}
+                            id={item.id}
+                            label={item.name}
+                          />
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-8 text-sm text-slate-500">No branch heads added yet.</div>
+                  )}
+                </div>
+              </div>
+              {editingEntity?.kind === "branch-head" ? (
+                <EditModal
+                  title="Edit branch head"
+                  onClose={() => setEditingEntity(null)}
+                  action={branchHeadEditAction}
+                  pending={branchHeadEditPending}
+                  state={activeEditState}
+                >
+                  <input type="hidden" name="id" value={editingEntity.item.id} />
+                  <Field label="Branch head name" name="name" defaultValue={editingEntity.item.name} />
                 </EditModal>
               ) : null}
             </SectionCard>
@@ -1373,6 +1692,18 @@ export function AdminDashboard({
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                     />
                   </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                      Branch head
+                    </label>
+                    <input
+                      type="text"
+                      value={responseBranchHead}
+                      onChange={(event) => setResponseBranchHead(event.target.value)}
+                      placeholder="Search branch head"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                    />
+                  </div>
                 </div>
               </div>
               <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200">
@@ -1385,6 +1716,7 @@ export function AdminDashboard({
                         <th className="px-4 py-3">Branch</th>
                         <th className="px-4 py-3">Date</th>
                         <th className="px-4 py-3">Team Lead</th>
+                        <th className="px-4 py-3">Branch Head</th>
                         <th className="px-4 py-3">Category</th>
                         <th className="px-4 py-3">Value</th>
                         <th className="px-4 py-3">Count</th>
@@ -1408,6 +1740,7 @@ export function AdminDashboard({
                             <td className="px-4 py-4 text-sm text-slate-700">{item.branchName || "—"}</td>
                             <td className="px-4 py-4 text-sm text-slate-700">{item.responseDate || "—"}</td>
                             <td className="px-4 py-4 text-sm text-slate-700">{item.teamLeadName || "—"}</td>
+                            <td className="px-4 py-4 text-sm text-slate-700">{item.branchHeadName || "—"}</td>
                             <td className="px-4 py-4 text-sm text-slate-700">{item.categoryLabel || "—"}</td>
                             <td className="px-4 py-4 text-sm text-slate-700">{item.categoryValueName || "—"}</td>
                             <td className="px-4 py-4 text-sm font-medium text-slate-700">{item.totalCount}</td>
@@ -1424,7 +1757,7 @@ export function AdminDashboard({
                         ))
                       ) : (
                         <tr>
-                          <td className="px-4 py-8 text-sm text-slate-500" colSpan={11}>
+                          <td className="px-4 py-8 text-sm text-slate-500" colSpan={12}>
                             No responses match the current filters.
                           </td>
                         </tr>

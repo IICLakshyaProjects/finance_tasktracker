@@ -31,6 +31,7 @@ export default async function DashboardPage() {
         status: response.status,
         branchName: response.branchName,
         teamLeadName: response.teamLeadName,
+        branchHeadName: response.branchHeadName,
         responseDate: response.responseDate,
         category: response.category,
         categoryLabel: response.categoryLabel,

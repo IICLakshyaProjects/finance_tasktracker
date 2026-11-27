@@ -6,13 +6,17 @@ import {
   listAccountReceivables,
   listBranchRelated,
   listCampuses,
+  listBranchHeads,
   listTeamLeads,
   listResponses,
   listUsers,
 } from "@/lib/db";
+import { triggerMissedSubmissionAlertsIfDue } from "@/lib/missed-submissions";
 import { AdminDashboard } from "./admin-dashboard";
 
 export default async function AdminPage() {
+  triggerMissedSubmissionAlertsIfDue();
+
   const session = await getSession();
 
   if (!session) {
@@ -23,14 +27,16 @@ export default async function AdminPage() {
     redirect("/");
   }
 
-  const [users, branchRelated, campuses, teamLeads, accountReceivables, responses] = await Promise.all([
-    listUsers(),
-    listBranchRelated(),
-    listCampuses(),
-    listTeamLeads(),
-    listAccountReceivables(),
-    listResponses(),
-  ]);
+  const [users, branchRelated, campuses, teamLeads, branchHeads, accountReceivables, responses] =
+    await Promise.all([
+      listUsers(),
+      listBranchRelated(),
+      listCampuses(),
+      listTeamLeads(),
+      listBranchHeads(),
+      listAccountReceivables(),
+      listResponses(),
+    ]);
   const activityDateSettings = await getActivityDateSettings();
 
   return (
@@ -42,6 +48,10 @@ export default async function AdminPage() {
         email: user.email,
         campusId: user.campusId,
         campusName: user.campusName,
+        teamLeadId: user.teamLeadId,
+        teamLeadName: user.teamLeadName,
+        branchHeadId: user.branchHeadId,
+        branchHeadName: user.branchHeadName,
         role: user.role,
         status: user.status,
         createdAt: user.createdAt.toISOString(),
@@ -50,6 +60,7 @@ export default async function AdminPage() {
       branchRelated={branchRelated}
       campuses={campuses}
       teamLeads={teamLeads}
+      branchHeads={branchHeads}
       accountReceivables={accountReceivables}
       responses={responses.map((response) => ({
         id: response.id,
@@ -59,6 +70,7 @@ export default async function AdminPage() {
         branchId: response.branchId,
         branchName: response.branchName,
         teamLeadName: response.teamLeadName,
+        branchHeadName: response.branchHeadName,
         responseDate: response.responseDate,
         category: response.category,
         categoryLabel: response.categoryLabel,
