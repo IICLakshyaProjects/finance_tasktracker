@@ -394,31 +394,77 @@ function InlineStatus({
   );
 }
 
+function IconEditButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-50"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M12 20h9" strokeLinecap="round" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
+
 function DeleteButton({
   action,
   id,
   label,
+  iconOnly = false,
 }: {
   action: FormAction;
   id: string;
   label: string;
+  iconOnly?: boolean;
 }) {
   return (
     <form action={action}>
       <input type="hidden" name="id" value={id} />
       <button
         type="submit"
-        className="rounded-full border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
+        title={`Delete ${label}`}
+        aria-label={`Delete ${label}`}
+        className={
+          iconOnly
+            ? "inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-300 text-rose-700 transition hover:bg-rose-50"
+            : "rounded-full border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-50"
+        }
         onClick={(event) => {
           if (!window.confirm(`Delete ${label}?`)) {
             event.preventDefault();
           }
         }}
       >
-        Delete
+        {iconOnly ? (
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 6h18" strokeLinecap="round" />
+            <path d="M8 6V4h8v2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+            <path d="M10 11v6M14 11v6" strokeLinecap="round" />
+          </svg>
+        ) : (
+          "Delete"
+        )}
       </button>
     </form>
   );
+}
+
+function formatCreatedAt(value: string | null) {
+  if (!value) {
+    return "—";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
 }
 
 export function AdminDashboard({
@@ -1014,15 +1060,15 @@ export function AdminDashboard({
                   </div>
                 </div>
                 <div className="border-b border-slate-200 bg-slate-50 px-6 py-5">
-                  <div className="grid grid-cols-12 gap-4 text-sm font-semibold uppercase tracking-[0.08em] text-slate-500">
-                    <div className="col-span-3">Email</div>
-                    <div className="col-span-1">Campus</div>
-                    <div className="col-span-1">Team lead</div>
-                    <div className="col-span-1">Branch head</div>
-                    <div className="col-span-1">Role</div>
-                    <div className="col-span-1">Status</div>
-                    <div className="col-span-2">Created</div>
-                    <div className="col-span-2 text-right">Actions</div>
+                  <div className="grid grid-cols-12 gap-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-500">
+                    <div className="col-span-2 min-w-0">Email</div>
+                    <div className="col-span-1 min-w-0">Campus</div>
+                    <div className="col-span-1 min-w-0">Team lead</div>
+                    <div className="col-span-1 min-w-0">Branch head</div>
+                    <div className="col-span-1 min-w-0">Role</div>
+                    <div className="col-span-1 min-w-0">Status</div>
+                    <div className="col-span-2 min-w-0">Created</div>
+                    <div className="col-span-3 text-right">Actions</div>
                   </div>
                 </div>
 
@@ -1030,8 +1076,8 @@ export function AdminDashboard({
                   {usersByListKind.length ? (
                     filteredUsers.length ? (
                     filteredUsers.map((user) => (
-                    <div key={user.id} className="grid grid-cols-12 items-center gap-4 px-6 py-6">
-                        <div className="col-span-3 min-w-0">
+                    <div key={user.id} className="grid grid-cols-12 items-center gap-3 px-6 py-6">
+                        <div className="col-span-2 min-w-0">
                           <p className="truncate text-[1.05rem] font-medium text-slate-950">
                             {user.email || user.username}
                           </p>
@@ -1057,15 +1103,12 @@ export function AdminDashboard({
                               : user.status.charAt(0).toUpperCase() + user.status.slice(1).toLowerCase()}
                           </span>
                         </div>
-                        <div className="col-span-2 text-sm text-slate-600">{formatDateTime(user.createdAt)}</div>
-                        <div className="col-span-2 flex justify-end gap-3">
-                          <button
-                            type="button"
+                        <div className="col-span-2 text-sm text-slate-600">{formatCreatedAt(user.createdAt)}</div>
+                        <div className="col-span-3 flex shrink-0 flex-wrap items-center justify-end gap-2">
+                          <IconEditButton
+                            label={`Edit ${user.email}`}
                             onClick={() => setEditingEntity({ kind: "user", item: user })}
-                            className="rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
-                          >
-                            Edit
-                          </button>
+                          />
                           <form
                             action={async (formData) => {
                               await setUserActiveAction(undefined, formData);
@@ -1080,7 +1123,7 @@ export function AdminDashboard({
                             {user.status.toUpperCase() === "DISABLED" ? (
                               <button
                                 type="submit"
-                                className="rounded-full border border-emerald-300 px-3 py-2 text-xs font-medium text-emerald-700 transition hover:bg-emerald-50"
+                                className="rounded-full border border-emerald-300 px-2.5 py-2 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-50"
                               >
                                 Activate
                               </button>
@@ -1092,7 +1135,7 @@ export function AdminDashboard({
                                     event.preventDefault();
                                   }
                                 }}
-                                className="rounded-full border border-amber-300 px-3 py-2 text-xs font-medium text-amber-700 transition hover:bg-amber-50"
+                                className="rounded-full border border-amber-300 px-2.5 py-2 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-50"
                               >
                                 Deactivate
                               </button>
@@ -1104,6 +1147,7 @@ export function AdminDashboard({
                             }}
                             id={user.id}
                             label={user.email}
+                            iconOnly
                           />
                         </div>
                       </div>
