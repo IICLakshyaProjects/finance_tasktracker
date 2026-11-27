@@ -4,23 +4,29 @@ import { refresh, revalidatePath } from "next/cache";
 
 import {
   createAccountReceivable,
+  createBranchHead,
   createBranchRelated,
   createCampus,
   createTeamLead,
   createUser,
   updateActivityDateSettings,
   deleteAccountReceivable,
+  deleteBranchHead,
   deleteBranchRelated,
   deleteCampus,
   deleteResponses,
   deleteTeamLead,
   deleteUser,
+  findBranchHeadById,
+  findTeamLeadById,
   setUserDisabled,
   updateAccountReceivable,
   updateBranchRelated,
   updateCampus,
+  updateBranchHead,
   updateTeamLead,
   updateUser,
+  userExistsWithName,
 } from "@/lib/db";
 import { hasSmtpConfig, sendPasswordSetupEmail } from "@/lib/mailer";
 import {
@@ -75,6 +81,41 @@ function normalizeRole(value: string) {
 
 function readId(formData: FormData) {
   return readString(formData, "id");
+}
+
+function readOptionalReferenceId(formData: FormData, key: string): string | null {
+  const value = readString(formData, key);
+  return value || null;
+}
+
+async function validateOptionalTeamLeadId(
+  teamLeadId: string | null,
+): Promise<string | null | AdminActionState> {
+  if (!teamLeadId) {
+    return null;
+  }
+
+  const teamLead = await findTeamLeadById(teamLeadId);
+  if (!teamLead) {
+    return failure("Selected team lead was not found.");
+  }
+
+  return teamLeadId;
+}
+
+async function validateOptionalBranchHeadId(
+  branchHeadId: string | null,
+): Promise<string | null | AdminActionState> {
+  if (!branchHeadId) {
+    return null;
+  }
+
+  const branchHead = await findBranchHeadById(branchHeadId);
+  if (!branchHead) {
+    return failure("Selected branch head was not found.");
+  }
+
+  return branchHeadId;
 }
 
 export async function addBranchRelatedAction(
@@ -276,6 +317,90 @@ export async function deleteTeamLeadAction(
   return deleted ? success("Team lead deleted.") : failure("Could not delete team lead value.");
 }
 
+export async function addBranchHeadAction(
+  previousState: AdminActionState = initialState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  void previousState;
+
+  const name = readString(formData, "name");
+
+  if (!name) {
+    return failure("Branch head name is required.");
+  }
+
+  if (!(await userExistsWithName(name))) {
+    return failure(
+      `No active user found with the name "${name}". Create the user first and use their exact display name.`,
+    );
+  }
+
+  try {
+    await createBranchHead(name);
+    revalidatePath("/admin");
+    refresh();
+    return success(`Branch head "${name}" added.`);
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      revalidatePath("/admin");
+      refresh();
+      return success(`Branch head "${name}" already exists.`);
+    }
+
+    return failure("Could not add branch head value.");
+  }
+}
+
+export async function updateBranchHeadAction(
+  previousState: AdminActionState = initialState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  void previousState;
+
+  const id = readId(formData);
+  const name = readString(formData, "name");
+
+  if (!id || !name) {
+    return failure("Branch head name is required.");
+  }
+
+  if (!(await userExistsWithName(name))) {
+    return failure(
+      `No active user found with the name "${name}". Create the user first and use their exact display name.`,
+    );
+  }
+
+  try {
+    await updateBranchHead(id, name);
+    revalidatePath("/admin");
+    refresh();
+    return success(`Branch head "${name}" updated.`);
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      return failure(`Branch head "${name}" already exists.`);
+    }
+
+    return failure("Could not update branch head value.");
+  }
+}
+
+export async function deleteBranchHeadAction(
+  previousState: AdminActionState = initialState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  void previousState;
+
+  const id = readId(formData);
+  if (!id) {
+    return failure("Branch head id is required.");
+  }
+
+  const deleted = await deleteBranchHead(id);
+  revalidatePath("/admin");
+  refresh();
+  return deleted ? success("Branch head deleted.") : failure("Could not delete branch head value.");
+}
+
 export async function deleteCampusAction(
   previousState: AdminActionState = initialState,
   formData: FormData,
@@ -377,6 +502,8 @@ export async function createUserAction(
   const username = readString(formData, "username");
   const password = readString(formData, "password");
   const campusId = readString(formData, "campusId");
+  const teamLeadIdRaw = readOptionalReferenceId(formData, "teamLeadId");
+  const branchHeadIdRaw = readOptionalReferenceId(formData, "branchHeadId");
   const role = normalizeRole(readString(formData, "role"));
 
   if (!username) {
@@ -386,6 +513,17 @@ export async function createUserAction(
   if (!campusId) {
     return failure("Campus is required.");
   }
+
+  const resolvedTeamLeadId = await validateOptionalTeamLeadId(teamLeadIdRaw);
+  if (resolvedTeamLeadId !== null && typeof resolvedTeamLeadId === "object") {
+    return resolvedTeamLeadId;
+  }
+  const resolvedBranchHeadId = await validateOptionalBranchHeadId(branchHeadIdRaw);
+  if (resolvedBranchHeadId !== null && typeof resolvedBranchHeadId === "object") {
+    return resolvedBranchHeadId;
+  }
+  const teamLeadId = resolvedTeamLeadId;
+  const branchHeadId = resolvedBranchHeadId;
 
   const setupToken = createRandomToken();
   const setupTokenHash = hashToken(setupToken);
@@ -400,6 +538,8 @@ export async function createUserAction(
       username,
       email: username,
       campusId,
+      teamLeadId,
+      branchHeadId,
       role,
       passwordHash: password ? hashPassword(password) : null,
       status: password ? "ACTIVE" : "INVITED",
@@ -455,6 +595,8 @@ export async function updateUserAction(
   const username = readString(formData, "username");
   const password = readString(formData, "password");
   const campusId = readString(formData, "campusId");
+  const teamLeadIdRaw = readOptionalReferenceId(formData, "teamLeadId");
+  const branchHeadIdRaw = readOptionalReferenceId(formData, "branchHeadId");
   const role = normalizeRole(readString(formData, "role"));
 
   if (!id || !username) {
@@ -465,6 +607,17 @@ export async function updateUserAction(
     return failure("Campus is required.");
   }
 
+  const resolvedTeamLeadId = await validateOptionalTeamLeadId(teamLeadIdRaw);
+  if (resolvedTeamLeadId !== null && typeof resolvedTeamLeadId === "object") {
+    return resolvedTeamLeadId;
+  }
+  const resolvedBranchHeadId = await validateOptionalBranchHeadId(branchHeadIdRaw);
+  if (resolvedBranchHeadId !== null && typeof resolvedBranchHeadId === "object") {
+    return resolvedBranchHeadId;
+  }
+  const teamLeadId = resolvedTeamLeadId;
+  const branchHeadId = resolvedBranchHeadId;
+
   try {
     await updateUser({
       id,
@@ -472,6 +625,8 @@ export async function updateUserAction(
       username,
       email: username,
       campusId,
+      teamLeadId,
+      branchHeadId,
       role,
       passwordHash: password ? hashPassword(password) : null,
     });

@@ -185,6 +185,7 @@ export async function createResponseAction(
   const branchId = readString(formData, "branchId");
   const responseDate = readString(formData, "responseDate");
   const teamLeadName = readString(formData, "teamLeadName");
+  const branchHeadName = readString(formData, "branchHeadName");
   const status = normalizeResponseStatus(readString(formData, "status"));
   const responseRows = parseResponseRows(readString(formData, "responseRows"));
 
@@ -215,6 +216,10 @@ export async function createResponseAction(
     return { error: "Enter the team lead name.", message: "", submittedAt: 0 };
   }
 
+  if (!branchHeadName) {
+    return { error: "Select the branch head.", message: "", submittedAt: 0 };
+  }
+
   if (!status) {
     return { error: "Choose a valid status.", message: "", submittedAt: 0 };
   }
@@ -233,6 +238,7 @@ export async function createResponseAction(
       branchId: branch.id,
       branchName: branch.name,
       teamLeadName,
+      branchHeadName,
       responseDate,
       category: normalizedResponse.category,
       categoryLabel: normalizedResponse.categoryLabel,
@@ -301,6 +307,7 @@ export async function createResponseAction(
       branchId: branch.id,
       branchName: branch.name,
       teamLeadName,
+      branchHeadName,
       responseDate,
       category: row.category,
       categoryLabel,

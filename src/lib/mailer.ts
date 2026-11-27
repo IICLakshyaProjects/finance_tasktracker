@@ -67,3 +67,67 @@ export async function sendPasswordSetupEmail(options: {
 
   return { sent: true };
 }
+
+export async function sendMissedSubmissionAlert(options: {
+  to: string;
+  recipientRole: "team-lead" | "branch-head";
+  agentName: string;
+  agentEmail: string;
+  lastSubmittedDate: string;
+  daysSince: number;
+  teamLeadName: string | null;
+  branchHeadName: string | null;
+}) {
+  if (!hasSmtpConfig()) {
+    return { sent: false };
+  }
+
+  const port = Number(readEnv("SMTP_PORT"));
+  const transporter = nodemailer.createTransport({
+    host: readEnv("SMTP_HOST"),
+    port,
+    secure: port === 465,
+    auth: {
+      user: readEnv("SMTP_USER"),
+      pass: readSmtpPassword(),
+    },
+  });
+
+  const roleLabel = options.recipientRole === "team-lead" ? "Team Lead" : "Branch Head";
+  const subject = `TaskTracker: ${options.agentName} has not submitted for ${options.daysSince} days`;
+
+  const lines = [
+    `Hello,`,
+    "",
+    `This is a TaskTracker reminder sent to the assigned ${roleLabel}.`,
+    "",
+    `Agent: ${options.agentName} (${options.agentEmail})`,
+    `Last submission date: ${options.lastSubmittedDate}`,
+    `Days without submission: ${options.daysSince}`,
+    options.teamLeadName ? `Team lead on record: ${options.teamLeadName}` : "",
+    options.branchHeadName ? `Branch head on record: ${options.branchHeadName}` : "",
+    "",
+    "Please follow up so the agent can submit their activity response.",
+  ].filter(Boolean);
+
+  await transporter.sendMail({
+    from: readEnv("SMTP_FROM"),
+    to: options.to,
+    subject,
+    text: lines.join("\n"),
+    html: `
+      <p>Hello,</p>
+      <p>This is a TaskTracker reminder sent to the assigned <strong>${roleLabel}</strong>.</p>
+      <ul>
+        <li><strong>Agent:</strong> ${options.agentName} (${options.agentEmail})</li>
+        <li><strong>Last submission date:</strong> ${options.lastSubmittedDate}</li>
+        <li><strong>Days without submission:</strong> ${options.daysSince}</li>
+        ${options.teamLeadName ? `<li><strong>Team lead:</strong> ${options.teamLeadName}</li>` : ""}
+        ${options.branchHeadName ? `<li><strong>Branch head:</strong> ${options.branchHeadName}</li>` : ""}
+      </ul>
+      <p>Please follow up so the agent can submit their activity response.</p>
+    `,
+  });
+
+  return { sent: true };
+}

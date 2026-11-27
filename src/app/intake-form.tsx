@@ -20,7 +20,10 @@ type IntakeFormProps = {
   initialName: string;
   initialBranchId: string;
   initialBranchName: string;
+  initialTeamLeadName: string;
+  initialBranchHeadName: string;
   teamLeads: SelectOption[];
+  branchHeads: SelectOption[];
   accountReceivables: SelectOption[];
   branchRelated: SelectOption[];
   activityDateSettings: ActivityDateSettings;
@@ -91,7 +94,10 @@ export function IntakeForm({
   initialName,
   initialBranchId,
   initialBranchName,
+  initialTeamLeadName,
+  initialBranchHeadName,
   teamLeads,
+  branchHeads,
   accountReceivables,
   branchRelated,
   activityDateSettings,
@@ -105,7 +111,9 @@ export function IntakeForm({
   const [name] = useState(initialName);
   const [branchId] = useState(initialBranchId);
   const [responseDate, setResponseDate] = useState(activityDateMax || todayActivityDate);
-  const [teamLeadName, setTeamLeadName] = useState("");
+  const hasAssignedTeamLead = Boolean(initialTeamLeadName.trim());
+  const [teamLeadName, setTeamLeadName] = useState(initialTeamLeadName);
+  const [branchHeadName, setBranchHeadName] = useState(initialBranchHeadName || "");
   const [responseStatus, setResponseStatus] = useState<ResponseStatus>("");
   const [rows, setRows] = useState<ResponseRow[]>([createRow()]);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
@@ -117,7 +125,8 @@ export function IntakeForm({
       formRef.current?.reset();
       setStep(1);
       setResponseDate(activityDateMax || todayActivityDate);
-      setTeamLeadName("");
+      setTeamLeadName(initialTeamLeadName);
+      setBranchHeadName(initialBranchHeadName || "");
       setResponseStatus("");
       setRows([createRow()]);
       setHasAttemptedSubmit(false);
@@ -125,10 +134,15 @@ export function IntakeForm({
     }
 
     submissionRef.current = state.submittedAt;
-  }, [activityDateMax, state.error, state.submittedAt, todayActivityDate]);
+  }, [activityDateMax, initialBranchHeadName, initialTeamLeadName, state.error, state.submittedAt, todayActivityDate]);
 
   const isStep1Complete = Boolean(
-    name.trim() && branchId && responseDate && teamLeadName.trim() && responseStatus,
+    name.trim() &&
+      branchId &&
+      responseDate &&
+      teamLeadName.trim() &&
+      branchHeadName.trim() &&
+      responseStatus,
   );
 
   const goNext = () => {
@@ -212,7 +226,9 @@ export function IntakeForm({
                 <p className="max-w-2xl text-sm leading-6 text-slate-500">
                   {responseStatus === "working"
                     ? step === 1
-                      ? "Name and branch are fetched from your login account. Select the date, team lead, and working status first."
+                      ? hasAssignedTeamLead
+                        ? "Name, branch, and team lead are fetched from your account. Select the date, branch head, and working status first."
+                        : "Name and branch are fetched from your login account. Select the date, team lead, branch head, and working status first."
                       : "Add one or more response rows using the plus button. Remark supports multiple paragraphs."
                     : "Select leave or weekoff to save immediately, or choose working to continue to the response rows."}
                 </p>
@@ -223,6 +239,7 @@ export function IntakeForm({
                 <input type="hidden" name="branchId" value={branchId} />
                 <input type="hidden" name="responseDate" value={responseDate} />
                 <input type="hidden" name="teamLeadName" value={teamLeadName} />
+                <input type="hidden" name="branchHeadName" value={branchHeadName} />
                 <input type="hidden" name="status" value={responseStatus} />
                 <input
                   type="hidden"
@@ -300,27 +317,67 @@ export function IntakeForm({
                       </p>
                     </div>
 
-                    <div>
-                      <label
-                        htmlFor="teamLeadName"
-                        className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600"
-                      >
-                        Team Lead Name
-                      </label>
-                      <select
-                        id="teamLeadName"
-                        value={teamLeadName}
-                        onChange={(event) => setTeamLeadName(event.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                      >
-                        <option value="">Select a team lead</option>
-                        {teamLeads.map((item) => (
-                          <option key={item.id} value={item.label}>
-                            {item.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {hasAssignedTeamLead ? (
+                      <div>
+                        <label
+                          htmlFor="teamLeadName"
+                          className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600"
+                        >
+                          Team Lead Name
+                        </label>
+                        <input
+                          id="teamLeadName"
+                          type="text"
+                          value={teamLeadName}
+                          readOnly
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-slate-700 outline-none"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label
+                          htmlFor="teamLeadName"
+                          className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600"
+                        >
+                          Team Lead Name
+                        </label>
+                        <select
+                          id="teamLeadName"
+                          value={teamLeadName}
+                          onChange={(event) => setTeamLeadName(event.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                        >
+                          <option value="">Select a team lead</option>
+                          {teamLeads.map((item) => (
+                            <option key={item.id} value={item.label}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="branchHeadName"
+                      className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600"
+                    >
+                      Branch Head Name
+                    </label>
+                    <select
+                      id="branchHeadName"
+                      value={branchHeadName}
+                      onChange={(event) => setBranchHeadName(event.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                    >
+                      <option value="">Select a branch head</option>
+                      {branchHeads.map((item) => (
+                        <option key={item.id} value={item.label}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="grid gap-5 lg:grid-cols-2">

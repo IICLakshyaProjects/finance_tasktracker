@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cron:missed-submissions": "node -e \"const s=process.env.CRON_SECRET;if(!s){console.error('Set CRON_SECRET');process.exit(1)}fetch(process.env.APP_URL+'/api/cron/missed-submissions',{headers:{Authorization:'Bearer '+s}}).then(r=>r.json()).then(console.log).catch(e=>{console.error(e);process.exit(1)})\""
   },
   "dependencies": {
     "html-to-image": "^1.11.13",

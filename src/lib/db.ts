@@ -11,7 +11,7 @@ const globalForDb = globalThis as typeof globalThis & {
   schemaBootstrapVersion?: number;
 };
 
-const SCHEMA_BOOTSTRAP_VERSION = 15;
+const SCHEMA_BOOTSTRAP_VERSION = 16;
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -48,6 +48,13 @@ async function ensureSchema() {
         );
 
         CREATE TABLE IF NOT EXISTS "TeamLeads" (
+          id text PRIMARY KEY,
+          name text NOT NULL UNIQUE,
+          "createdAt" timestamptz NOT NULL DEFAULT now(),
+          "updatedAt" timestamptz NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS "BranchHeads" (
           id text PRIMARY KEY,
           name text NOT NULL UNIQUE,
           "createdAt" timestamptz NOT NULL DEFAULT now(),
@@ -108,16 +115,26 @@ async function ensureSchema() {
 
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS name text;
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "campusId" text;
+        ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "teamLeadId" text;
+        ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "branchHeadId" text;
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'USER';
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'working';
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS remark text NOT NULL DEFAULT '';
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS "totalTimeTaken" text NOT NULL DEFAULT '0:00';
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS "totalTimeTakenHours" integer NOT NULL DEFAULT 0;
         ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS "totalTimeTakenMinutes" integer NOT NULL DEFAULT 0;
+        ALTER TABLE "Responses" ADD COLUMN IF NOT EXISTS "branchHeadName" text NOT NULL DEFAULT '';
 
         INSERT INTO "AppSettings" (key, value)
         VALUES ('restrictActivityDate', 'true')
         ON CONFLICT (key) DO NOTHING;
+
+        CREATE TABLE IF NOT EXISTS "MissedSubmissionNotifications" (
+          "userId" text NOT NULL,
+          "lastResponseDate" text NOT NULL,
+          "sentAt" timestamptz NOT NULL DEFAULT now(),
+          PRIMARY KEY ("userId", "lastResponseDate")
+        );
       `);
 
       const legacyTimeColumn = await pool.query<{ exists: boolean }>(
@@ -253,6 +270,34 @@ export async function updateActivityDateSettings(settings: ActivityDateSettings)
   );
 }
 
+export async function getAppSettingValue(key: string): Promise<string | null> {
+  const result = await query<{ value: string }>(
+    `
+      SELECT value
+      FROM "AppSettings"
+      WHERE key = $1
+      LIMIT 1
+    `,
+    [key],
+  );
+
+  return result.rows[0]?.value ?? null;
+}
+
+export async function setAppSettingValue(key: string, value: string): Promise<void> {
+  await query(
+    `
+      INSERT INTO "AppSettings" (key, value)
+      VALUES ($1, $2)
+      ON CONFLICT (key) DO UPDATE
+      SET
+        value = EXCLUDED.value,
+        "updatedAt" = NOW()
+    `,
+    [key, value],
+  );
+}
+
 function formatDuration(hours: number, minutes: number) {
   const normalizedHours = Number.isFinite(hours) ? Math.max(0, Math.trunc(hours)) : 0;
   const normalizedMinutes = Number.isFinite(minutes) ? Math.max(0, Math.trunc(minutes)) : 0;
@@ -296,6 +341,11 @@ export type TeamLeadRecord = {
   name: string;
 };
 
+export type BranchHeadRecord = {
+  id: string;
+  name: string;
+};
+
 export type AccountReceivableRecord = {
   id: string;
   name: string;
@@ -309,6 +359,7 @@ export type ResponseRecord = {
   branchId: string;
   branchName: string;
   teamLeadName: string;
+  branchHeadName: string;
   responseDate: string;
   category: string;
   categoryLabel: string;
@@ -329,6 +380,10 @@ export type UserRecord = {
   email: string;
   campusId: string | null;
   campusName: string | null;
+  teamLeadId: string | null;
+  teamLeadName: string | null;
+  branchHeadId: string | null;
+  branchHeadName: string | null;
   role: string;
   status: string;
   createdAt: Date;
@@ -342,6 +397,10 @@ export type UserAuthRecord = {
   email: string;
   campusId: string | null;
   campusName: string | null;
+  teamLeadId: string | null;
+  teamLeadName: string | null;
+  branchHeadId: string | null;
+  branchHeadName: string | null;
   role: string;
   passwordHash: string | null;
   status: string;
@@ -385,6 +444,18 @@ export async function listTeamLeads(): Promise<TeamLeadRecord[]> {
   return result.rows;
 }
 
+export async function listBranchHeads(): Promise<BranchHeadRecord[]> {
+  const result = await query<BranchHeadRecord>(
+    `
+      SELECT id, name
+      FROM "BranchHeads"
+      ORDER BY "createdAt" DESC
+    `,
+  );
+
+  return result.rows;
+}
+
 export async function listAccountReceivables(): Promise<AccountReceivableRecord[]> {
   const result = await query<AccountReceivableRecord>(
     `
@@ -407,6 +478,7 @@ export async function listResponses(): Promise<ResponseRecord[]> {
         "branchId",
         "branchName",
         "teamLeadName",
+        "branchHeadName",
         "responseDate",
         category,
         "categoryLabel",
@@ -631,6 +703,69 @@ export async function deleteTeamLead(id: string) {
   return (result.rowCount ?? 0) > 0;
 }
 
+export async function createBranchHead(name: string) {
+  const id = crypto.randomUUID();
+
+  try {
+    const result = await query<BranchHeadRecord & { createdAt: Date }>(
+      `
+        INSERT INTO "BranchHeads" (id, name)
+        VALUES ($1, $2)
+        RETURNING id, name, "createdAt"
+      `,
+      [id, name],
+    );
+
+    return result.rows[0] ?? { id, name, createdAt: new Date() };
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      const result = await query<BranchHeadRecord & { createdAt: Date }>(
+        `
+          SELECT id, name, "createdAt"
+          FROM "BranchHeads"
+          WHERE name = $1
+          LIMIT 1
+        `,
+        [name],
+      );
+
+      if (result.rows[0]) {
+        return result.rows[0];
+      }
+    }
+
+    throw error;
+  }
+}
+
+export async function updateBranchHead(id: string, name: string) {
+  const result = await query<BranchHeadRecord & { createdAt: Date }>(
+    `
+      UPDATE "BranchHeads"
+      SET
+        name = $2,
+        "updatedAt" = NOW()
+      WHERE id = $1
+      RETURNING id, name, "createdAt"
+    `,
+    [id, name],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function deleteBranchHead(id: string) {
+  const result = await query(
+    `
+      DELETE FROM "BranchHeads"
+      WHERE id = $1
+    `,
+    [id],
+  );
+
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function createAccountReceivable(name: string) {
   const id = crypto.randomUUID();
 
@@ -733,6 +868,19 @@ export async function findTeamLeadById(id: string) {
   return result.rows[0] ?? null;
 }
 
+export async function findBranchHeadById(id: string) {
+  const result = await query<BranchHeadRecord>(
+    `
+      SELECT id, name
+      FROM "BranchHeads"
+      WHERE id = $1
+    `,
+    [id],
+  );
+
+  return result.rows[0] ?? null;
+}
+
 export async function findAccountReceivableById(id: string) {
   const result = await query<AccountReceivableRecord>(
     `
@@ -770,6 +918,27 @@ export async function findUserById(id: string) {
   return result.rows[0] ?? null;
 }
 
+export async function userExistsWithName(name: string): Promise<boolean> {
+  const normalized = name.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  const result = await query<{ id: string }>(
+    `
+      SELECT id
+      FROM "users"
+      WHERE name IS NOT NULL
+        AND LOWER(TRIM(name)) = LOWER(TRIM($1))
+        AND UPPER(TRIM(status::text)) <> 'DISABLED'
+      LIMIT 1
+    `,
+    [normalized],
+  );
+
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function listUsers(): Promise<UserRecord[]> {
   const result = await query<UserRecord>(
     `
@@ -780,12 +949,18 @@ export async function listUsers(): Promise<UserRecord[]> {
         u.email,
         u."campusId",
         c.name AS "campusName",
+        u."teamLeadId",
+        tl.name AS "teamLeadName",
+        u."branchHeadId",
+        bh.name AS "branchHeadName",
         u.role::text AS role,
         u.status::text AS status,
         u."createdAt",
         u."passwordSetAt"
       FROM "users" u
       LEFT JOIN "Campus" c ON c.id = u."campusId"
+      LEFT JOIN "TeamLeads" tl ON tl.id = u."teamLeadId"
+      LEFT JOIN "BranchHeads" bh ON bh.id = u."branchHeadId"
       ORDER BY u."createdAt" DESC
     `,
   );
@@ -799,6 +974,8 @@ export async function updateUser(input: {
   username: string;
   email: string;
   campusId: string | null;
+  teamLeadId: string | null;
+  branchHeadId: string | null;
   role: string;
   passwordHash: string | null;
 }) {
@@ -810,12 +987,14 @@ export async function updateUser(input: {
         username = $3,
         email = $4,
         "campusId" = $5,
-        role = $6,
-        "passwordHash" = COALESCE($7, "passwordHash"),
-        "passwordSetupTokenHash" = CASE WHEN $7 IS NULL THEN "passwordSetupTokenHash" ELSE NULL END,
-        "passwordSetupExpiresAt" = CASE WHEN $7 IS NULL THEN "passwordSetupExpiresAt" ELSE NULL END,
-        "passwordSetAt" = CASE WHEN $7 IS NULL THEN "passwordSetAt" ELSE NOW() END,
-        status = CASE WHEN $7 IS NULL OR status::text = 'DISABLED' THEN status ELSE 'ACTIVE' END,
+        "teamLeadId" = $6,
+        "branchHeadId" = $7,
+        role = $8,
+        "passwordHash" = COALESCE($9, "passwordHash"),
+        "passwordSetupTokenHash" = CASE WHEN $9 IS NULL THEN "passwordSetupTokenHash" ELSE NULL END,
+        "passwordSetupExpiresAt" = CASE WHEN $9 IS NULL THEN "passwordSetupExpiresAt" ELSE NULL END,
+        "passwordSetAt" = CASE WHEN $9 IS NULL THEN "passwordSetAt" ELSE NOW() END,
+        status = CASE WHEN $9 IS NULL OR status::text = 'DISABLED' THEN status ELSE 'ACTIVE' END,
         "updatedAt" = NOW()
       WHERE id = $1
       RETURNING
@@ -829,7 +1008,17 @@ export async function updateUser(input: {
         "createdAt",
         "passwordHash"
     `,
-    [input.id, input.name, input.username, input.email, input.campusId, input.role, input.passwordHash],
+  [
+    input.id,
+    input.name,
+    input.username,
+    input.email,
+    input.campusId,
+    input.teamLeadId,
+    input.branchHeadId,
+    input.role,
+    input.passwordHash,
+  ],
   );
 
   return result.rows[0] ?? null;
@@ -900,6 +1089,10 @@ export async function getUserByEmail(email: string): Promise<UserAuthRecord | nu
           u.email,
           u."campusId",
           c.name AS "campusName",
+          u."teamLeadId",
+          tl.name AS "teamLeadName",
+          u."branchHeadId",
+          bh.name AS "branchHeadName",
           u.role::text AS role,
           u."passwordHash",
           u.status::text AS status,
@@ -907,7 +1100,9 @@ export async function getUserByEmail(email: string): Promise<UserAuthRecord | nu
           u."passwordSetupExpiresAt"
         FROM "users" u
         LEFT JOIN "Campus" c ON c.id = u."campusId"
-        WHERE u.email = $1
+        LEFT JOIN "TeamLeads" tl ON tl.id = u."teamLeadId"
+        LEFT JOIN "BranchHeads" bh ON bh.id = u."branchHeadId"
+        WHERE u.email = $1 OR u.username = $1
         LIMIT 1
       `,
       [email],
@@ -941,6 +1136,8 @@ export async function createUser(input: {
   username: string;
   email: string;
   campusId: string | null;
+  teamLeadId: string | null;
+  branchHeadId: string | null;
   role: string;
   passwordHash: string | null;
   passwordSetupTokenHash: string;
@@ -969,6 +1166,8 @@ export async function createUser(input: {
         username,
         email,
         "campusId",
+        "teamLeadId",
+        "branchHeadId",
         role,
         "passwordHash",
         status,
@@ -976,7 +1175,7 @@ export async function createUser(input: {
         "passwordSetupExpiresAt",
         "passwordSetAt"
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING
         id,
         name,
@@ -992,6 +1191,8 @@ export async function createUser(input: {
       input.username,
       input.email,
       input.campusId,
+      input.teamLeadId,
+      input.branchHeadId,
       input.role,
       input.passwordHash,
       input.status,
@@ -1020,6 +1221,7 @@ export async function createResponse(input: {
   branchId: string;
   branchName: string;
   teamLeadName: string;
+  branchHeadName: string;
   responseDate: string;
   category: string;
   categoryLabel: string;
@@ -1043,6 +1245,7 @@ export async function createResponse(input: {
         "branchId",
         "branchName",
         "teamLeadName",
+        "branchHeadName",
         "responseDate",
         category,
         "categoryLabel",
@@ -1055,7 +1258,7 @@ export async function createResponse(input: {
         remark
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
       )
       RETURNING
         id,
@@ -1064,6 +1267,7 @@ export async function createResponse(input: {
         "branchId",
         "branchName",
         "teamLeadName",
+        "branchHeadName",
         "responseDate",
         category,
         "categoryLabel",
@@ -1085,6 +1289,7 @@ export async function createResponse(input: {
       input.branchId,
       input.branchName,
       input.teamLeadName,
+      input.branchHeadName,
       input.responseDate,
       input.category,
       input.categoryLabel,
@@ -1105,6 +1310,7 @@ export async function createResponse(input: {
     branchId: input.branchId,
     branchName: input.branchName,
     teamLeadName: input.teamLeadName,
+    branchHeadName: input.branchHeadName,
     responseDate: input.responseDate,
     category: input.category,
     categoryLabel: input.categoryLabel,
@@ -1138,5 +1344,107 @@ export async function updateUserPassword(input: {
       WHERE email = $2
     `,
     [input.passwordHash, input.email],
+  );
+}
+
+export type UserSubmissionCheckRecord = {
+  id: string;
+  name: string | null;
+  username: string;
+  email: string;
+  teamLeadName: string | null;
+  branchHeadName: string | null;
+  lastResponseDate: string | null;
+  createdAt: Date;
+};
+
+export async function listUsersForSubmissionCheck(): Promise<UserSubmissionCheckRecord[]> {
+  const result = await query<UserSubmissionCheckRecord>(
+    `
+      SELECT
+        u.id,
+        u.name,
+        u.username,
+        u.email,
+        tl.name AS "teamLeadName",
+        bh.name AS "branchHeadName",
+        (
+          SELECT MAX(r."responseDate")
+          FROM "Responses" r
+          WHERE
+            LOWER(TRIM(r."agentUsername")) = LOWER(TRIM(u.username))
+            OR LOWER(TRIM(r."agentUsername")) = LOWER(TRIM(u.email))
+            OR (
+              u.name IS NOT NULL
+              AND (
+                LOWER(TRIM(r."agentName")) = LOWER(TRIM(u.name))
+                OR LOWER(TRIM(r."agentUsername")) = LOWER(TRIM(u.name))
+              )
+            )
+        ) AS "lastResponseDate",
+        u."createdAt"
+      FROM "users" u
+      LEFT JOIN "TeamLeads" tl ON tl.id = u."teamLeadId"
+      LEFT JOIN "BranchHeads" bh ON bh.id = u."branchHeadId"
+      WHERE UPPER(TRIM(u.role::text)) <> 'ADMIN'
+        AND UPPER(TRIM(u.status::text)) <> 'DISABLED'
+      ORDER BY u."createdAt" DESC
+    `,
+  );
+
+  return result.rows;
+}
+
+export async function findUserEmailByDisplayName(name: string): Promise<string | null> {
+  const normalized = name.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const result = await query<{ email: string }>(
+    `
+      SELECT email
+      FROM "users"
+      WHERE name IS NOT NULL
+        AND LOWER(TRIM(name)) = LOWER(TRIM($1))
+        AND UPPER(TRIM(status::text)) <> 'DISABLED'
+      ORDER BY "createdAt" DESC
+      LIMIT 1
+    `,
+    [normalized],
+  );
+
+  return result.rows[0]?.email ?? null;
+}
+
+export async function hasMissedSubmissionNotification(
+  userId: string,
+  lastResponseDateKey: string,
+): Promise<boolean> {
+  const result = await query<{ exists: boolean }>(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM "MissedSubmissionNotifications"
+        WHERE "userId" = $1 AND "lastResponseDate" = $2
+      ) AS exists
+    `,
+    [userId, lastResponseDateKey],
+  );
+
+  return Boolean(result.rows[0]?.exists);
+}
+
+export async function recordMissedSubmissionNotification(
+  userId: string,
+  lastResponseDateKey: string,
+): Promise<void> {
+  await query(
+    `
+      INSERT INTO "MissedSubmissionNotifications" ("userId", "lastResponseDate")
+      VALUES ($1, $2)
+      ON CONFLICT ("userId", "lastResponseDate") DO NOTHING
+    `,
+    [userId, lastResponseDateKey],
   );
 }
