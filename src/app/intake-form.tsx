@@ -112,6 +112,7 @@ export function IntakeForm({
   const [branchId] = useState(initialBranchId);
   const [responseDate, setResponseDate] = useState(activityDateMax || todayActivityDate);
   const hasAssignedTeamLead = Boolean(initialTeamLeadName.trim());
+  const hasAssignedBranchHead = Boolean(initialBranchHeadName.trim());
   const [teamLeadName, setTeamLeadName] = useState(initialTeamLeadName);
   const [branchHeadName, setBranchHeadName] = useState(initialBranchHeadName || "");
   const [responseStatus, setResponseStatus] = useState<ResponseStatus>("");
@@ -226,9 +227,13 @@ export function IntakeForm({
                 <p className="max-w-2xl text-sm leading-6 text-slate-500">
                   {responseStatus === "working"
                     ? step === 1
-                      ? hasAssignedTeamLead
-                        ? "Name, branch, and team lead are fetched from your account. Select the date, branch head, and working status first."
-                        : "Name and branch are fetched from your login account. Select the date, team lead, branch head, and working status first."
+                      ? hasAssignedTeamLead && hasAssignedBranchHead
+                        ? "Name, branch, team lead, and branch head are fetched from your account. Select the date and working status first."
+                        : hasAssignedTeamLead
+                          ? "Name, branch, and team lead are fetched from your account. Select the date, branch head, and working status first."
+                          : hasAssignedBranchHead
+                            ? "Name, branch, and branch head are fetched from your account. Select the date, team lead, and working status first."
+                            : "Name and branch are fetched from your login account. Select the date, team lead, branch head, and working status first."
                       : "Add one or more response rows using the plus button. Remark supports multiple paragraphs."
                     : "Select leave or weekoff to save immediately, or choose working to continue to the response rows."}
                 </p>
@@ -358,27 +363,45 @@ export function IntakeForm({
                     )}
                   </div>
 
-                  <div>
-                    <label
-                      htmlFor="branchHeadName"
-                      className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600"
-                    >
-                      Branch Head Name
-                    </label>
-                    <select
-                      id="branchHeadName"
-                      value={branchHeadName}
-                      onChange={(event) => setBranchHeadName(event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                    >
-                      <option value="">Select a branch head</option>
-                      {branchHeads.map((item) => (
-                        <option key={item.id} value={item.label}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {hasAssignedBranchHead ? (
+                    <div>
+                      <label
+                        htmlFor="branchHeadName"
+                        className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600"
+                      >
+                        Branch Head Name
+                      </label>
+                      <input
+                        id="branchHeadName"
+                        type="text"
+                        value={branchHeadName}
+                        readOnly
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-slate-700 outline-none"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label
+                        htmlFor="branchHeadName"
+                        className="mb-2 block text-sm font-semibold uppercase tracking-[0.06em] text-slate-600"
+                      >
+                        Branch Head Name
+                      </label>
+                      <select
+                        id="branchHeadName"
+                        value={branchHeadName}
+                        onChange={(event) => setBranchHeadName(event.target.value)}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                      >
+                        <option value="">Select a branch head</option>
+                        {branchHeads.map((item) => (
+                          <option key={item.id} value={item.label}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <div className="grid gap-5 lg:grid-cols-2">
                     <div className="lg:col-span-2">
